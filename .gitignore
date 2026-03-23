@@ -1,0 +1,8 @@
+*.mp4
+*.mp3
+*.ass
+*.srt
+temp/
+venv/
+__pycache__/
+.env

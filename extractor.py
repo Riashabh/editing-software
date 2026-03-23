@@ -11,7 +11,11 @@ def extract_frames(video_path, output_dir="temp/frames", interval=2):
         "-y"
     ]
     subprocess.run(command, check=True)
-    frames = sorted([f"{output_dir}/{f}" for f in os.listdir(output_dir) if f.endswith(".jpg")])
+    frames = sorted([
+        f"{output_dir}/{f}" 
+        for f in os.listdir(output_dir) 
+        if f.endswith(".jpg")
+    ])
     print(f"Extracted {len(frames)} frames")
     return frames
 
