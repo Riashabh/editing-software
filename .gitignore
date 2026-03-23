@@ -6,3 +6,5 @@ temp/
 venv/
 __pycache__/
 .env
+remotion-renderer/node_modules/
+remotion-renderer/out/
