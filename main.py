@@ -1,10 +1,11 @@
+import sys
 from extractor import extract_audio
 from analyzer import transcribe_audio, find_best_moments
 from editor import cut_and_merge
 from reframe import reframe_to_vertical
 from subtitles import generate_srt, burn_subtitles
 
-video = "test.mp4"
+video = sys.argv[1] if len(sys.argv) > 1 else "test.mp4"
 
 print("Step 1: Extracting audio...")
 audio = extract_audio(video)
