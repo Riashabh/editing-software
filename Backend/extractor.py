@@ -20,15 +20,12 @@ def extract_frames(video_path, output_dir="temp/frames", interval=2):
     return frames
 
 def extract_audio(video_path, output_path="temp/audio.mp3"):
+    if not os.path.exists(video_path):
+        raise FileNotFoundError(f"Video file not found: {video_path}")
     os.makedirs("temp", exist_ok=True)
-    command = [
-        "ffmpeg",
-        "-i", video_path,
-        "-q:a", "0",
-        "-map", "a",
-        output_path,
-        "-y"
-    ]
-    subprocess.run(command, check=True)
+    command = ["ffmpeg", "-i", video_path, "-q:a", "0", "-map", "a", output_path, "-y"]
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"FFmpeg audio extraction failed:\n{result.stderr}")
     print(f"Audio extracted to {output_path}")
     return output_path
