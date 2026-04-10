@@ -19,7 +19,7 @@ def transcribe_audio(audio_path):
                 model="whisper-1",
                 file=audio_file,
                 response_format="verbose_json",
-                timestamp_granularities=["segment"]
+                timestamp_granularities=["word", "segment"]
             )
         except Exception as e:
             raise RuntimeError(f"Whisper transcription failed: {e}")

@@ -10,7 +10,7 @@ from typing import List, Optional, Set, Tuple
 _FILTER_LIST_LINE = re.compile(r"^\s+[A-Za-z.]+\s+(\S+)\s+\S+->\S+")
 
 
-def generate_srt(transcript, output_path="temp/subtitles.srt"):
+def generate_srt(transcript, moments, output_path="temp/subtitles.srt"):
     def format_time(seconds):
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
@@ -19,14 +19,29 @@ def generate_srt(transcript, output_path="temp/subtitles.srt"):
         return f"{hours:02}:{minutes:02}:{secs:02},{millis:03}"
 
     os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    subtitles = []
+    time_offset = 0
+
+    for moment in moments:
+        m_start = moment["start"]
+        m_end = moment["end"]
+        for segment in transcript.segments:
+            if segment.end <= m_start or segment.start >= m_end:
+                continue
+            seg_start = max(segment.start, m_start) - m_start + time_offset
+            seg_end = min(segment.end, m_end) - m_start + time_offset
+            subtitles.append((seg_start, seg_end, segment.text.strip()))
+        time_offset += m_end - m_start
+
     with open(output_path, "w", encoding="utf-8") as f:
-        for i, segment in enumerate(transcript.segments):
+        for i, (start, end, text) in enumerate(subtitles):
             f.write(f"{i+1}\n")
-            f.write(f"{format_time(segment.start)} --> {format_time(segment.end)}\n")
-            f.write(f"{segment.text.strip()}\n\n")
+            f.write(f"{format_time(start)} --> {format_time(end)}\n")
+            f.write(f"{text}\n\n")
 
     print(f"SRT file saved to {output_path}")
     return output_path
+
 
 
 def _srt_timestamp_to_ass(srt_ts: str) -> str:
@@ -104,7 +119,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,1,2,20,20,30,1
+Style: Default,Arial,32,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,3,2,2,20,20,60,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

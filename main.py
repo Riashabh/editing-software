@@ -1,9 +1,13 @@
+import os
 import sys
-from extractor import extract_audio
-from analyzer import transcribe_audio, find_best_moments
-from editor import cut_and_merge
-from reframe import reframe_to_vertical
-from subtitles import generate_srt, burn_subtitles
+import shutil
+
+from Backend.extractor import extract_audio
+from Backend.analyzer import transcribe_audio, find_best_moments
+from Backend.editor import cut_and_merge
+from Backend.reframe import reframe_to_vertical
+from Backend.subtitles import generate_srt, burn_subtitles
+
 
 video = sys.argv[1] if len(sys.argv) > 1 else "test.mp4"
 
@@ -26,11 +30,16 @@ try:
     vertical = reframe_to_vertical(output)
 
     print("Step 5: Generating subtitles...")
-    srt = generate_srt(transcript)
+    srt = generate_srt(transcript, moments)
 
     print("Step 6: Burning subtitles...")
     output_subtitled = burn_subtitles(vertical, srt)
     print(f"Final video with subtitles: {output_subtitled}")
+
+    shutil.rmtree("temp", ignore_errors=True)
+    os.remove(output)
+    os.remove(vertical)
+    print("Cleaned up temp files.")
 
 except FileNotFoundError as e:
     print(f"[ERROR] File not found: {e}")
@@ -38,3 +47,5 @@ except FileNotFoundError as e:
 except RuntimeError as e:
     print(f"[ERROR] Pipeline failed: {e}")
     sys.exit(1)
+
+
