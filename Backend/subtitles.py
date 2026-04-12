@@ -25,12 +25,17 @@ def generate_srt(transcript, moments, output_path="temp/subtitles.srt"):
     for moment in moments:
         m_start = moment["start"]
         m_end = moment["end"]
-        for segment in transcript.segments:
-            if segment.end <= m_start or segment.start >= m_end:
-                continue
-            seg_start = max(segment.start, m_start) - m_start + time_offset
-            seg_end = min(segment.end, m_end) - m_start + time_offset
-            subtitles.append((seg_start, seg_end, segment.text.strip()))
+
+        words = [w for w in transcript.words if w.start >= m_start and w.end <= m_end]
+
+        chunk_size = 3
+        for i in range(0, len(words), chunk_size):
+            chunk = words[i:i + chunk_size]
+            start = chunk[0].start - m_start + time_offset
+            end = chunk[-1].end - m_start + time_offset
+            text = " ".join(w.word.strip() for w in chunk)
+            subtitles.append((start, end, text))
+
         time_offset += m_end - m_start
 
     with open(output_path, "w", encoding="utf-8") as f:
@@ -41,7 +46,6 @@ def generate_srt(transcript, moments, output_path="temp/subtitles.srt"):
 
     print(f"SRT file saved to {output_path}")
     return output_path
-
 
 
 def _srt_timestamp_to_ass(srt_ts: str) -> str:
