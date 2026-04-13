@@ -1,0 +1,99 @@
+"use client";
+import { useEffect, useRef } from "react";
+import { SubStyle, Subtitle } from "./StylePanel";
+
+interface Props {
+  videoUrl: string;
+  subtitles: Subtitle[];
+  style: SubStyle;
+}
+
+export default function VideoPlayer({ videoUrl, subtitles, style }: Props) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+
+    let animFrame: number;
+
+    const draw = () => {
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      if (video.videoWidth) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const sub = subtitles.find(
+        (s) => video.currentTime >= s.start && video.currentTime <= s.end
+      );
+
+      if (sub && canvas.width > 0) {
+        const fontSize = Math.round((style.fontSize / 100) * canvas.height * 0.05);
+        ctx.font = `bold ${fontSize}px ${style.fontFamily}, Arial`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        const x = canvas.width / 2;
+        const y = (style.positionY / 100) * canvas.height;
+
+        // outline first
+        if (style.outline) {
+          ctx.shadowColor = "transparent";
+          ctx.strokeStyle = style.outlineColor;
+          ctx.lineWidth = style.outlineWidth * (canvas.height / 1920);
+          ctx.lineJoin = "round";
+          ctx.strokeText(sub.text, x, y);
+        }
+
+        // shadow
+        if (style.shadow) {
+          ctx.shadowColor = "rgba(0,0,0,0.85)";
+          ctx.shadowBlur = fontSize * 0.3;
+          ctx.shadowOffsetX = 3;
+          ctx.shadowOffsetY = 3;
+        } else {
+          ctx.shadowColor = "transparent";
+          ctx.shadowBlur = 0;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+        }
+
+        ctx.fillStyle = style.color;
+        ctx.fillText(sub.text, x, y);
+
+        // reset shadow
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
+      }
+
+      animFrame = requestAnimationFrame(draw);
+    };
+
+    animFrame = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(animFrame);
+  }, [subtitles, style]);
+
+  return (
+    <div className="relative w-full" style={{ aspectRatio: "9/16" }}>
+      <video
+        ref={videoRef}
+        src={videoUrl}
+        controls
+        className="w-full h-full rounded-2xl object-cover bg-black"
+      />
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 w-full h-full rounded-2xl pointer-events-none"
+      />
+    </div>
+  );
+}
