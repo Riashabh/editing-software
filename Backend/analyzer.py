@@ -27,7 +27,7 @@ def transcribe_audio(audio_path):
     return transcript
 
 
-def find_best_moments(transcript):
+def find_best_moments(transcript, count=1):
     print("Finding best moments with GPT-4o...")
     formatted = ""
     for segment in transcript.segments:
@@ -39,7 +39,7 @@ def find_best_moments(transcript):
         response = client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are a video editor. Analyze this podcast transcript and find the 3 most compelling moments — funniest, most insightful, or most emotional. Return ONLY a JSON array like: [{\"start\": 10.5, \"end\": 45.2, \"reason\": \"why this moment is good\"}]"},
+                {"role": "system", "content": f"You are a video editor specializing in short-form content. Analyze this podcast transcript and find the {count} most compelling moment(s) — funniest, most insightful, or most emotional. Each clip MUST be between 30 and 45 seconds long. Return ONLY a JSON array like: [{{\"start\": 10.5, \"end\": 45.2, \"reason\": \"why this moment is good\"}}]. Never return a clip shorter than 30s or longer than 45s."},
                 {"role": "user", "content": formatted}
             ]
         )
@@ -53,5 +53,16 @@ def find_best_moments(transcript):
     except json.JSONDecodeError:
         raise RuntimeError(f"GPT-4o returned invalid JSON: {content}")
     
-    print(f"Found {len(moments)} best moments")
-    return moments
+        # Enforce 30-45 second clip length
+    enforced = []
+    for m in moments:
+        duration = m["end"] - m["start"]
+        if duration > 45:
+            m["end"] = m["start"] + 40  # trim to 40s
+        elif duration < 30:
+            m["end"] = m["start"] + 30  # extend to 30s
+        enforced.append(m)
+
+    print(f"Found {len(enforced)} best moments")
+    return enforced
+
