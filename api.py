@@ -1,10 +1,10 @@
+import json
 import os
 import re
 import shutil
 import subprocess
-import uuid
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, UploadFile, File, HTTPException, WebSocket
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -29,8 +29,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-connections: dict[str, WebSocket] = {}
-
 os.makedirs("temp/clips_out", exist_ok=True)
 app.mount("/clips", StaticFiles(directory="temp/clips_out"), name="clips")
 
@@ -38,80 +36,86 @@ app.mount("/clips", StaticFiles(directory="temp/clips_out"), name="clips")
 # ── helpers ──────────────────────────────────────────────────────────────────
 
 def hex_to_ass(hex_color: str) -> str:
-    """#rrggbb → ASS &H00BBGGRR"""
     h = hex_color.lstrip("#")
     r, g, b = h[0:2], h[2:4], h[4:6]
     return f"&H00{b.upper()}{g.upper()}{r.upper()}"
 
 
-def srt_to_json(srt_path: str) -> list:
-    with open(srt_path, encoding="utf-8") as f:
-        raw = f.read()
-    blocks = re.split(r"\n\s*\n", raw.strip())
+def subtitles_to_json(subtitles: list) -> list:
     result = []
-    for block in blocks:
-        lines = [l for l in block.split("\n") if l.strip()]
-        if len(lines) < 2:
-            continue
-        idx = 1 if re.fullmatch(r"\d+", lines[0].strip()) else 0
-        if idx >= len(lines):
-            continue
-        tm = re.match(r"(\d+:\d+:\d+[,.]\d+)\s*-->\s*(\d+:\d+:\d+[,.]\d+)", lines[idx])
-        if not tm:
-            continue
-        def parse_ts(ts):
-            ts = ts.replace(",", ".")
-            h, m, s = ts.split(":")
-            return int(h) * 3600 + int(m) * 60 + float(s)
-        result.append({
-            "start": parse_ts(tm.group(1)),
-            "end": parse_ts(tm.group(2)),
-            "text": " ".join(lines[idx + 1:]),
-        })
+    for start, end, text, word_timings in subtitles:
+        result.append({"start": start, "end": end, "text": text, "words": word_timings})
     return result
 
 
-def burn_with_style(video_path: str, srt_path: str, output_path: str, style: "StyleSettings"):
-    """Convert SRT → ASS with custom style, then burn into video."""
-    raw = open(srt_path, encoding="utf-8", errors="replace").read()
-    blocks = re.split(r"\n\s*\n", raw.strip())
-    dialogues = []
-    for block in blocks:
-        lines = [ln for ln in block.split("\n") if ln.strip()]
-        if len(lines) < 2:
-            continue
-        idx = 1 if re.fullmatch(r"\d+", lines[0].strip()) else 0
-        if idx >= len(lines):
-            continue
-        tm = re.match(
-            r"(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})",
-            lines[idx],
-        )
-        if not tm:
-            continue
-        body = _escape_ass_dialogue_text("\n".join(lines[idx + 1:]))
-        if body:
-            dialogues.append((_srt_timestamp_to_ass(tm.group(1)), _srt_timestamp_to_ass(tm.group(2)), body))
+def _seconds_to_srt_ts(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02}:{m:02}:{s:02},{ms:03}"
 
-        # Get actual video dimensions so ASS coordinate space matches exactly
+
+def burn_with_style(video_path: str, srt_path: str, output_path: str, style: "StyleSettings", words_path: str = ""):
+    dialogues = []
+
+    if style.karaoke and words_path and os.path.exists(words_path):
+        subs = json.load(open(words_path))
+        for sub in subs:
+            start_ass = _srt_timestamp_to_ass(_seconds_to_srt_ts(sub["start"]))
+            end_ass = _srt_timestamp_to_ass(_seconds_to_srt_ts(sub["end"]))
+            parts = []
+            for w in sub.get("words", []):
+                dur_cs = max(1, round((w["end"] - w["start"]) * 100))
+                word = _escape_ass_dialogue_text(w["word"])
+                parts.append(f"{{\\k{dur_cs}}}{word}")
+            body = " ".join(parts)
+            if body:
+                dialogues.append((start_ass, end_ass, body))
+    else:
+        raw = open(srt_path, encoding="utf-8", errors="replace").read()
+        blocks = re.split(r"\n\s*\n", raw.strip())
+        for block in blocks:
+            lines = [ln for ln in block.split("\n") if ln.strip()]
+            if len(lines) < 2:
+                continue
+            idx = 1 if re.fullmatch(r"\d+", lines[0].strip()) else 0
+            if idx >= len(lines):
+                continue
+            tm = re.match(
+                r"(\d{2}:\d{2}:\d{2}[,.]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[,.]\d{3})",
+                lines[idx],
+            )
+            if not tm:
+                continue
+            body = _escape_ass_dialogue_text("\n".join(lines[idx + 1:]))
+            if body:
+                dialogues.append((_srt_timestamp_to_ass(tm.group(1)), _srt_timestamp_to_ass(tm.group(2)), body))
+
     probe = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", video_path],
-        capture_output=True, text=True
+        capture_output=True, text=True,
     )
-    streams = __import__("json").loads(probe.stdout)["streams"]
+    streams = json.loads(probe.stdout)["streams"]
     vs = next(s for s in streams if s["codec_type"] == "video")
     vid_w, vid_h = int(vs["width"]), int(vs["height"])
 
     font_size = max(16, int((style.fontSize / 100) * vid_h * 0.05))
-    primary = hex_to_ass(style.color)
     outline_color = hex_to_ass(style.outlineColor) if style.outline else "&H00000000"
     outline_w = round(style.outlineWidth * 0.3, 1) if style.outline else 0
     shadow_d = 2 if style.shadow else 0
     margin_v = int((1 - style.positionY / 100) * vid_h)
 
+    if style.karaoke:
+        primary = hex_to_ass(style.karaokeColor)
+        secondary = hex_to_ass(style.color)
+    else:
+        primary = hex_to_ass(style.color)
+        secondary = "&H000000FF"
+
     ass_style = (
         f"Style: Default,{style.fontFamily},{font_size},{primary},"
-        f"&H000000FF,{outline_color},&H80000000,1,0,0,0,100,100,0,0,1,{outline_w},{shadow_d},2,20,20,{margin_v},1"
+        f"{secondary},{outline_color},&H80000000,1,0,0,0,100,100,0,0,1,{outline_w},{shadow_d},2,20,20,{margin_v},1"
     )
     header = f"""[Script Info]
 ScriptType: v4.00+
@@ -154,6 +158,8 @@ class StyleSettings(BaseModel):
     outlineWidth: int = 8
     shadow: bool = True
     positionY: int = 80
+    karaoke: bool = False
+    karaokeColor: str = "#ffe600"
 
 
 # ── routes ───────────────────────────────────────────────────────────────────
@@ -161,22 +167,6 @@ class StyleSettings(BaseModel):
 @app.get("/")
 def root():
     return {"status": "running"}
-
-
-@app.websocket("/ws/{job_id}")
-async def websocket_endpoint(websocket: WebSocket, job_id: str):
-    await websocket.accept()
-    connections[job_id] = websocket
-    try:
-        await websocket.wait_for_disconnect()
-    finally:
-        connections.pop(job_id, None)
-
-
-async def send_step(job_id: str, step: str):
-    ws = connections.get(job_id)
-    if ws:
-        await ws.send_text(step)
 
 
 @app.post("/process")
@@ -188,72 +178,63 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
         shutil.copyfileobj(file.file, f)
 
     try:
-        await send_step(job_id, "extracting")
         audio = extract_audio(input_path)
-
-        await send_step(job_id, "transcribing")
         transcript = transcribe_audio(audio)
-
-        await send_step(job_id, "finding_moments")
         count = 1 if mode == "single" else 3
         moments = find_best_moments(transcript, count=count)
-
-        await send_step(job_id, "cutting")
 
         if mode == "multi":
             clips = []
             for i, moment in enumerate(moments):
                 merged = cut_and_merge(input_path, [moment], output_path=f"temp/{job_id}_clip{i}.mp4")
-                await send_step(job_id, "reframing")
                 vertical = reframe_to_vertical(merged, output_path=f"temp/clips_out/{job_id}_v{i}.mp4")
-                await send_step(job_id, "subtitles")
-                srt = generate_srt(transcript, [moment], output_path=f"temp/{job_id}_{i}.srt")
+                srt, sub_data = generate_srt(transcript, [moment], output_path=f"temp/{job_id}_{i}.srt")
+                sub_json = subtitles_to_json(sub_data)
+                with open(f"temp/{job_id}_{i}_words.json", "w") as wf:
+                    json.dump(sub_json, wf)
                 clips.append({
                     "video_url": f"/clips/{job_id}_v{i}.mp4",
-                    "subtitles": srt_to_json(srt),
+                    "subtitles": sub_json,
                     "srt_key": f"{job_id}_{i}",
                 })
-            await send_step(job_id, "done")
             return {"mode": "multi", "clips": clips}
 
         else:
             merged = cut_and_merge(input_path, moments, output_path=f"temp/{job_id}_merged.mp4")
-            await send_step(job_id, "reframing")
             vertical = reframe_to_vertical(merged, output_path=f"temp/clips_out/{job_id}_v.mp4")
-            await send_step(job_id, "subtitles")
-            srt = generate_srt(transcript, moments, output_path=f"temp/{job_id}.srt")
-            await send_step(job_id, "done")
+            srt, sub_data = generate_srt(transcript, moments, output_path=f"temp/{job_id}.srt")
+            sub_json = subtitles_to_json(sub_data)
+            with open(f"temp/{job_id}_words.json", "w") as wf:
+                json.dump(sub_json, wf)
             return {
                 "mode": "single",
                 "video_url": f"/clips/{job_id}_v.mp4",
-                "subtitles": srt_to_json(srt),
+                "subtitles": sub_json,
                 "job_id": job_id,
             }
 
     except Exception as e:
-        await send_step(job_id, "error")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/export")
 async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""):
-    """Burn subtitles with user-chosen style and return the final video."""
     if srt_key:
-        # multi clip
         video_path = os.path.abspath(f"temp/clips_out/{srt_key.split('_')[0]}_v{srt_key.split('_')[1]}.mp4")
         srt_path = os.path.abspath(f"temp/{srt_key}.srt")
+        words_path = os.path.abspath(f"temp/{srt_key}_words.json")
         out_path = os.path.abspath(f"temp/clips_out/{srt_key}_exported.mp4")
     else:
-        # single clip
         video_path = os.path.abspath(f"temp/clips_out/{job_id}_v.mp4")
         srt_path = os.path.abspath(f"temp/{job_id}.srt")
+        words_path = os.path.abspath(f"temp/{job_id}_words.json")
         out_path = os.path.abspath(f"temp/clips_out/{job_id}_exported.mp4")
 
     if not os.path.exists(video_path) or not os.path.exists(srt_path):
         raise HTTPException(status_code=404, detail="Files not found. Re-process the video.")
 
     try:
-        burn_with_style(video_path, srt_path, out_path, style)
+        burn_with_style(video_path, srt_path, out_path, style, words_path=words_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

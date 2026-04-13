@@ -30,9 +30,8 @@ export default function VideoPlayer({ videoUrl, subtitles, style }: Props) {
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const sub = subtitles.find(
-        (s) => video.currentTime >= s.start && video.currentTime <= s.end
-      );
+      const currentTime = video.currentTime;
+      const sub = subtitles.find(s => currentTime >= s.start && currentTime <= s.end);
 
       if (sub && canvas.width > 0) {
         const fontSize = Math.round((style.fontSize / 100) * canvas.height * 0.05);
@@ -43,36 +42,81 @@ export default function VideoPlayer({ videoUrl, subtitles, style }: Props) {
         const x = canvas.width / 2;
         const y = (style.positionY / 100) * canvas.height;
 
-        // outline first
-        if (style.outline) {
-          ctx.shadowColor = "transparent";
-          ctx.strokeStyle = style.outlineColor;
-          ctx.lineWidth = style.outlineWidth * (canvas.height / 1920);
-          ctx.lineJoin = "round";
-          ctx.strokeText(sub.text, x, y);
-        }
+        if (style.karaoke && sub.words && sub.words.length > 0) {
+          // measure total width to center the line
+          const wordWidths = sub.words.map(w => ctx.measureText(w.word).width);
+          const spaces = (sub.words.length - 1) * ctx.measureText(" ").width;
+          const totalWidth = wordWidths.reduce((a, b) => a + b, 0) + spaces;
+          let curX = x - totalWidth / 2;
 
-        // shadow
-        if (style.shadow) {
-          ctx.shadowColor = "rgba(0,0,0,0.85)";
-          ctx.shadowBlur = fontSize * 0.3;
-          ctx.shadowOffsetX = 3;
-          ctx.shadowOffsetY = 3;
+          for (let i = 0; i < sub.words.length; i++) {
+            const w = sub.words[i];
+            const isActive = currentTime >= w.start && currentTime <= w.end;
+            const isPast = currentTime > w.end;
+            const wX = curX + wordWidths[i] / 2;
+
+            // outline
+            if (style.outline) {
+              ctx.shadowColor = "transparent";
+              ctx.strokeStyle = style.outlineColor;
+              ctx.lineWidth = style.outlineWidth * (canvas.height / 1920);
+              ctx.lineJoin = "round";
+              ctx.strokeText(w.word, wX, y);
+            }
+
+            // shadow
+            if (style.shadow) {
+              ctx.shadowColor = "rgba(0,0,0,0.85)";
+              ctx.shadowBlur = fontSize * 0.3;
+              ctx.shadowOffsetX = 3;
+              ctx.shadowOffsetY = 3;
+            } else {
+              ctx.shadowColor = "transparent";
+              ctx.shadowBlur = 0;
+              ctx.shadowOffsetX = 0;
+              ctx.shadowOffsetY = 0;
+            }
+
+            ctx.fillStyle = (isActive || isPast) ? style.karaokeColor : style.color;
+            ctx.fillText(w.word, wX, y);
+
+            ctx.shadowColor = "transparent";
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+
+            curX += wordWidths[i] + ctx.measureText(" ").width;
+          }
         } else {
+          // normal rendering
+          if (style.outline) {
+            ctx.shadowColor = "transparent";
+            ctx.strokeStyle = style.outlineColor;
+            ctx.lineWidth = style.outlineWidth * (canvas.height / 1920);
+            ctx.lineJoin = "round";
+            ctx.strokeText(sub.text, x, y);
+          }
+
+          if (style.shadow) {
+            ctx.shadowColor = "rgba(0,0,0,0.85)";
+            ctx.shadowBlur = fontSize * 0.3;
+            ctx.shadowOffsetX = 3;
+            ctx.shadowOffsetY = 3;
+          } else {
+            ctx.shadowColor = "transparent";
+            ctx.shadowBlur = 0;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 0;
+          }
+
+          ctx.fillStyle = style.color;
+          ctx.fillText(sub.text, x, y);
+
           ctx.shadowColor = "transparent";
           ctx.shadowBlur = 0;
           ctx.shadowOffsetX = 0;
           ctx.shadowOffsetY = 0;
         }
-
-        ctx.fillStyle = style.color;
-        ctx.fillText(sub.text, x, y);
-
-        // reset shadow
-        ctx.shadowColor = "transparent";
-        ctx.shadowBlur = 0;
-        ctx.shadowOffsetX = 0;
-        ctx.shadowOffsetY = 0;
       }
 
       animFrame = requestAnimationFrame(draw);

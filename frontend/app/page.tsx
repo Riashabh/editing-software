@@ -67,16 +67,11 @@ export default function Home() {
     const job_id = Math.random().toString(36).slice(2, 10);
     setJobId(job_id);
 
-    const ws = new WebSocket(`ws://localhost:8000/ws/${job_id}`);
-    ws.onmessage = (event) => {
-      const step = event.data;
-      if (step === "error") { setErrorStep(currentStep); return; }
-      const idx = STEP_MAP[step];
-      if (idx !== undefined) setCurrentStep(idx);
-    };
-
     const formData = new FormData();
     formData.append("file", file);
+
+    const timings = [0, 3000, 16000, 26000, 36000, 46000];
+    timings.forEach((t, i) => setTimeout(() => setCurrentStep(i), t));
 
     try {
       const res = await fetch(`http://localhost:8000/process?mode=${mode}&job_id=${job_id}`, {
@@ -95,7 +90,6 @@ export default function Home() {
       alert("Something went wrong.");
     } finally {
       setProcessing(false);
-      ws.close();
     }
   };
 

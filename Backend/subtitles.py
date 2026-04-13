@@ -34,18 +34,27 @@ def generate_srt(transcript, moments, output_path="temp/subtitles.srt"):
             start = chunk[0].start - m_start + time_offset
             end = chunk[-1].end - m_start + time_offset
             text = " ".join(w.word.strip() for w in chunk)
-            subtitles.append((start, end, text))
+            word_timings = [
+                {
+                    "word": w.word.strip(),
+                    "start": w.start - m_start + time_offset,
+                    "end": w.end - m_start + time_offset,
+                }
+                for w in chunk
+            ]
+            subtitles.append((start, end, text, word_timings))
 
         time_offset += m_end - m_start
 
+
     with open(output_path, "w", encoding="utf-8") as f:
-        for i, (start, end, text) in enumerate(subtitles):
+        for i, (start, end, text, _) in enumerate(subtitles):
             f.write(f"{i+1}\n")
             f.write(f"{format_time(start)} --> {format_time(end)}\n")
             f.write(f"{text}\n\n")
 
     print(f"SRT file saved to {output_path}")
-    return output_path
+    return output_path, subtitles
 
 
 def _srt_timestamp_to_ass(srt_ts: str) -> str:

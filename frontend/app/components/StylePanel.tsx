@@ -4,6 +4,7 @@ export interface Subtitle {
   start: number;
   end: number;
   text: string;
+  words: { word: string; start: number; end: number }[];
 }
 
 export interface SubStyle {
@@ -15,6 +16,8 @@ export interface SubStyle {
   outlineWidth: number;
   shadow: boolean;
   positionY: number;
+  karaoke: boolean;
+  karaokeColor: string;
 }
 
 export const DEFAULT_STYLE: SubStyle = {
@@ -26,34 +29,37 @@ export const DEFAULT_STYLE: SubStyle = {
   outlineWidth: 8,
   shadow: true,
   positionY: 80,
+  karaoke: false,
+  karaokeColor: "#ffe600",
 };
+
 
 const FONTS = ["Arial", "Impact", "Georgia", "Helvetica", "Courier New", "Verdana", "Trebuchet MS"];
 
 const PRESETS: { name: string; style: Partial<SubStyle> }[] = [
   {
     name: "Clean",
-    style: { fontFamily: "Arial", fontSize: 100, color: "#ffffff", outline: true, outlineColor: "#000000", outlineWidth: 6, shadow: false, positionY: 80 },
+    style: { fontFamily: "Arial", fontSize: 100, color: "#ffffff", outline: true, outlineColor: "#000000", outlineWidth: 6, shadow: false, positionY: 80, karaoke: false },
   },
-  {
-    name: "Punchy",
-    style: { fontFamily: "Impact", fontSize: 110, color: "#ffe600", outline: true, outlineColor: "#000000", outlineWidth: 10, shadow: true, positionY: 80 },
+    {
+    name: "Karaoke",
+    style: { fontFamily: "Impact", fontSize: 110, color: "#ffffff", outline: true, outlineColor: "#000000", outlineWidth: 8, shadow: true, positionY: 80, karaoke: true, karaokeColor: "#ffe600" },
   },
   {
     name: "Neon",
-    style: { fontFamily: "Arial", fontSize: 100, color: "#00f0ff", outline: true, outlineColor: "#003a3f", outlineWidth: 8, shadow: true, positionY: 80 },
+    style: { fontFamily: "Arial", fontSize: 100, color: "#00f0ff", outline: true, outlineColor: "#003a3f", outlineWidth: 8, shadow: true, positionY: 80, karaoke: false },
   },
   {
     name: "Minimal",
-    style: { fontFamily: "Helvetica", fontSize: 90, color: "#ffffff", outline: false, outlineColor: "#000000", outlineWidth: 4, shadow: true, positionY: 80 },
+    style: { fontFamily: "Helvetica", fontSize: 90, color: "#ffffff", outline: false, outlineColor: "#000000", outlineWidth: 4, shadow: true, positionY: 80, karaoke: false },
   },
   {
     name: "Hype",
-    style: { fontFamily: "Impact", fontSize: 140, color: "#ffffff", outline: true, outlineColor: "#000000", outlineWidth: 14, shadow: true, positionY: 80 },
+    style: { fontFamily: "Impact", fontSize: 140, color: "#ffffff", outline: true, outlineColor: "#000000", outlineWidth: 14, shadow: true, positionY: 80, karaoke: false },
   },
   {
     name: "Negative",
-    style: { fontFamily: "Arial", fontSize: 100, color: "#000000", outline: true, outlineColor: "#ffffff", outlineWidth: 8, shadow: false, positionY: 80 },
+    style: { fontFamily: "Arial", fontSize: 100, color: "#000000", outline: true, outlineColor: "#ffffff", outlineWidth: 8, shadow: false, positionY: 80, karaoke: false },
   },
 ];
 
@@ -164,6 +170,23 @@ export default function StylePanel({ style, onChange, onExport, exporting }: Pro
       <div className="flex items-center justify-between">
         <label className="text-xs text-neutral-400">Shadow</label>
         <Toggle on={style.shadow} onClick={() => set("shadow", !style.shadow)} />
+      </div>
+            {/* Karaoke */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <label className="text-xs text-neutral-400">Karaoke Highlight</label>
+          <Toggle on={style.karaoke} onClick={() => set("karaoke", !style.karaoke)} />
+        </div>
+        {style.karaoke && (
+          <div className="flex items-center gap-3 mt-2">
+            <input
+              type="color" value={style.karaokeColor}
+              onChange={(e) => set("karaokeColor", e.target.value)}
+              className="w-9 h-9 rounded-lg cursor-pointer border border-black/8"
+            />
+            <span className="text-xs text-neutral-400">Highlight color</span>
+          </div>
+        )}
       </div>
 
       {/* Position */}
