@@ -134,7 +134,7 @@ export default function VideoPlayer({ videoUrl, subtitles, style }: Props) {
         ref={videoRef}
         src={videoUrl}
         controls
-        className="w-full h-full rounded-2xl object-cover bg-black"
+        className="w-full h-full rounded-2xl object-cover"
       />
       <canvas
         ref={canvasRef}

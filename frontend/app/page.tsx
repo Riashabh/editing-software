@@ -135,16 +135,16 @@ export default function Home() {
     : null;
 
   return (
-    <main className="min-h-screen bg-white flex flex-col items-center px-4 font-sans pb-16">
+    <div className="h-screen flex flex-col font-sans overflow-hidden">
       {/* Nav */}
-      <nav className="fixed top-0 w-full px-12 py-5 flex items-center justify-between backdrop-blur-xl bg-white/60 border-b border-black/5 z-50">
+      <nav className="flex-shrink-0 w-full px-8 py-4 flex items-center justify-between bg-white border-b border-black/8 z-50">
         <span className="text-sm font-semibold tracking-tight">ClipForge</span>
         <span className="text-xs text-neutral-400 bg-black/5 px-3 py-1 rounded-full">AI Video Editor</span>
       </nav>
 
-      {/* Upload card */}
+      {/* Upload view */}
       {!result && (
-        <div className="flex flex-col items-center justify-center mt-40 w-full">
+        <main className="flex-1 flex flex-col items-center justify-center px-4 bg-white overflow-auto">
           <div className="text-center mb-12">
             <h1 className="text-5xl font-semibold tracking-tight leading-tight text-black">
               Turn long videos<br />into viral clips.
@@ -201,28 +201,35 @@ export default function Home() {
               </div>
             )}
           </div>
-        </div>
+        </main>
       )}
 
       {/* Editor view */}
       {result && activeClip && (
-        <div className="w-full max-w-6xl mt-24">
-          <div className="flex items-center justify-between mb-6">
-            <button onClick={() => setResult(null)} className="text-xs text-neutral-400 hover:text-black transition-colors">← New video</button>
+        <div className="flex-1 flex overflow-hidden">
+          {/* Left — stage */}
+          <div className="flex-1 bg-neutral-50 flex flex-col items-center justify-center p-8 relative overflow-auto">
+            {/* Clip tabs */}
             {result.mode === "multi" && (
-              <div className="flex gap-2 p-1 bg-black/[0.04] rounded-xl">
+              <div className="flex gap-2 p-1 bg-black/[0.04] rounded-xl mb-6">
                 {result.clips?.map((_, i) => (
-                  <button key={i} onClick={() => setSelectedClip(i)} className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${selectedClip === i ? "bg-white shadow-sm text-black" : "text-neutral-400"}`}>
+                  <button key={i} onClick={() => setSelectedClip(i)} className={`px-5 py-1.5 text-xs font-medium rounded-lg transition-all ${selectedClip === i ? "bg-white shadow-sm text-black" : "text-neutral-400 hover:text-black"}`}>
                     Clip {i + 1}
                   </button>
                 ))}
               </div>
             )}
-          </div>
 
-          <div className="flex gap-6">
             {/* Video */}
-            <div className="flex-1 max-w-xs">
+            <div
+              className="w-full"
+              style={{
+                maxWidth: style.aspectRatio === "9/16" ? "300px"
+                  : style.aspectRatio === "4/5" ? "380px"
+                  : style.aspectRatio === "1/1" ? "500px"
+                  : "760px",
+              }}
+            >
               <VideoPlayer
                 key={activeClip.video_url}
                 videoUrl={`http://localhost:8000${activeClip.video_url}`}
@@ -231,13 +238,23 @@ export default function Home() {
               />
             </div>
 
-            {/* Style panel */}
-            <div className="w-72 bg-white/70 backdrop-blur-2xl border border-black/8 rounded-3xl p-6 shadow-xl shadow-black/5 self-start sticky top-24">
+            {/* Back button */}
+            <button
+              onClick={() => setResult(null)}
+              className="absolute bottom-6 left-6 text-xs text-neutral-300 hover:text-black transition-colors"
+            >
+              ← New video
+            </button>
+          </div>
+
+          {/* Right — style panel */}
+          <div className="w-80 bg-white border-l border-black/8 flex flex-col overflow-y-auto">
+            <div className="p-6 flex-1">
               <StylePanel style={style} onChange={setStyle} onExport={handleExport} exporting={exporting} />
             </div>
           </div>
         </div>
       )}
-    </main>
+    </div>
   );
 }
