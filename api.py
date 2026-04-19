@@ -160,6 +160,7 @@ class StyleSettings(BaseModel):
     positionY: int = 80
     karaoke: bool = False
     karaokeColor: str = "#ffe600"
+    aspectRatio: str = "original"
 
 
 # ── routes ───────────────────────────────────────────────────────────────────
@@ -187,7 +188,9 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
             clips = []
             for i, moment in enumerate(moments):
                 merged = cut_and_merge(input_path, [moment], output_path=f"temp/{job_id}_clip{i}.mp4")
-                vertical = reframe_to_vertical(merged, output_path=f"temp/clips_out/{job_id}_v{i}.mp4")
+                out_path = f"temp/clips_out/{job_id}_v{i}.mp4"
+                shutil.copy(merged, out_path)
+
                 srt, sub_data = generate_srt(transcript, [moment], output_path=f"temp/{job_id}_{i}.srt")
                 sub_json = subtitles_to_json(sub_data)
                 with open(f"temp/{job_id}_{i}_words.json", "w") as wf:
@@ -201,7 +204,9 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
 
         else:
             merged = cut_and_merge(input_path, moments, output_path=f"temp/{job_id}_merged.mp4")
-            vertical = reframe_to_vertical(merged, output_path=f"temp/clips_out/{job_id}_v.mp4")
+            out_path = f"temp/clips_out/{job_id}_v.mp4"
+            shutil.copy(merged, out_path)
+
             srt, sub_data = generate_srt(transcript, moments, output_path=f"temp/{job_id}.srt")
             sub_json = subtitles_to_json(sub_data)
             with open(f"temp/{job_id}_words.json", "w") as wf:
@@ -234,7 +239,28 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
         raise HTTPException(status_code=404, detail="Files not found. Re-process the video.")
 
     try:
-        burn_with_style(video_path, srt_path, out_path, style, words_path=words_path)
+        crop_map = {
+            "9/16": None,   # handled by reframe_to_vertical
+            "16/9": "crop=iw:iw*9/16",
+            "1/1":  "crop=min(iw\\,ih):min(iw\\,ih)",
+            "4/5":  "crop=ih*4/5:ih",
+        }
+        source = video_path
+        if style.aspectRatio == "9/16":
+            cropped = out_path.replace(".mp4", "_reframed.mp4")
+            reframe_to_vertical(source, output_path=cropped)
+            source = cropped
+        elif style.aspectRatio in crop_map and crop_map[style.aspectRatio]:
+            cropped = out_path.replace(".mp4", "_cropped.mp4")
+            ffmpeg_bin, _ = _resolve_ffmpeg_bin()
+            subprocess.run(
+                [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                 "-i", source, "-vf", crop_map[style.aspectRatio],
+                 "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "copy", cropped],
+                check=True,
+            )
+            source = cropped
+        burn_with_style(source, srt_path, out_path, style, words_path=words_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

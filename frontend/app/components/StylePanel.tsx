@@ -18,6 +18,7 @@ export interface SubStyle {
   positionY: number;
   karaoke: boolean;
   karaokeColor: string;
+  aspectRatio: string;
 }
 
 export const DEFAULT_STYLE: SubStyle = {
@@ -31,6 +32,7 @@ export const DEFAULT_STYLE: SubStyle = {
   positionY: 80,
   karaoke: false,
   karaokeColor: "#ffe600",
+  aspectRatio: "original",
 };
 
 
@@ -200,6 +202,22 @@ export default function StylePanel({ style, onChange, onExport, exporting }: Pro
           onChange={(e) => set("positionY", Number(e.target.value))}
           className="w-full accent-black"
         />
+      </div>
+
+      {/* Aspect Ratio */}
+      <div>
+        <label className="text-xs text-neutral-400 mb-2 block">Aspect Ratio</label>
+        <div className="flex gap-2">
+          {(["original", "9/16", "16/9", "1/1", "4/5"] as const).map((r) => (
+            <button
+              key={r}
+              onClick={() => set("aspectRatio", r)}
+              className={`flex-1 py-2 text-xs font-medium rounded-xl border transition-all ${style.aspectRatio === r ? "bg-black text-white border-black" : "bg-black/[0.04] border-black/5 text-black hover:bg-black/[0.08]"}`}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Export */}

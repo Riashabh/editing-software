@@ -23,10 +23,12 @@ export default function VideoPlayer({ videoUrl, subtitles, style }: Props) {
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
 
-      if (video.videoWidth) {
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
+      const rect = canvas.getBoundingClientRect();
+      if (rect.width && rect.height) {
+        canvas.width = rect.width;
+        canvas.height = rect.height;
       }
+
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -127,7 +129,7 @@ export default function VideoPlayer({ videoUrl, subtitles, style }: Props) {
   }, [subtitles, style]);
 
   return (
-    <div className="relative w-full" style={{ aspectRatio: "9/16" }}>
+    <div className="relative w-full" style={{ aspectRatio: style.aspectRatio === "original" ? "16/9" : style.aspectRatio }}>
       <video
         ref={videoRef}
         src={videoUrl}

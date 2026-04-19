@@ -156,7 +156,7 @@ export default function Home() {
 
           <div className="w-full max-w-lg bg-white/70 backdrop-blur-2xl border border-black/8 rounded-3xl p-10 shadow-xl shadow-black/5">
             {/* Mode toggle */}
-            <div className="flex gap-2 mb-6 p-1 bg-black/[0.04] rounded-xl">
+            <div className="flex gap-2 mb-3 p-1 bg-black/[0.04] rounded-xl">
               <button onClick={() => setMode("single")} className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all ${mode === "single" ? "bg-white shadow-sm text-black" : "text-neutral-400"}`}>Best Clip</button>
               <button onClick={() => setMode("multi")} className={`flex-1 py-2 text-xs font-medium rounded-lg transition-all ${mode === "multi" ? "bg-white shadow-sm text-black" : "text-neutral-400"}`}>3 Clips</button>
             </div>
