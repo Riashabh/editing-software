@@ -48,6 +48,9 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Persistent video across messages
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+
   // View state
   const [view, setView] = useState<"chat" | "editor">("chat");
 
@@ -76,24 +79,26 @@ export default function Home() {
   const handleSend = async () => {
     const text = chatInput.trim();
     if (!text && !chatFile) return;
-    if (!chatFile) {
+
+    const file = chatFile ?? uploadedFile;
+    if (!file) {
       addMessage({ role: "user", text });
       setChatInput("");
       addMessage({ role: "assistant", text: "Please attach a video first — drag it into the chat or click the paperclip." });
       return;
     }
 
-    // Add user message
-    addMessage({ role: "user", text: text || "Process this video", fileName: chatFile.name });
+    // Persist the video for follow-up messages
+    if (chatFile) setUploadedFile(chatFile);
+
+    addMessage({ role: "user", text: text || "Process this video", fileName: chatFile?.name });
     setChatInput("");
-    const file = chatFile;
     setChatFile(null);
     setProcessing(true);
 
     try {
-      // Parse intent
       addMessage({ role: "assistant", text: "Got it, figuring out what you want..." });
-      let intent = { mode: "single", count: 1, aspectRatio: "original" };
+      let intent: { action: string; count: number; aspectRatio: string; subtitles: boolean } = { action: "find_best_moments", count: 1, aspectRatio: "original", subtitles: false };
       if (text) {
         const intentRes = await fetch("http://localhost:8000/parse-intent", {
           method: "POST",
@@ -103,43 +108,81 @@ export default function Home() {
         if (intentRes.ok) intent = await intentRes.json();
       }
 
-      const mode = intent.mode === "best_moments"
-        ? (intent.count > 1 ? "multi" : "single")
-        : "single";
-
-      addMessage({ role: "assistant", text: "Transcribing your video with Whisper..." });
-
       const job_id = Math.random().toString(36).slice(2, 10);
       setJobId(job_id);
-
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch(
-        `http://localhost:8000/process?mode=${mode}&job_id=${job_id}&count=${intent.count}&aspectRatio=${intent.aspectRatio}`,
-        { method: "POST", body: formData }
-      );
-
-      if (!res.ok) {
-        const err = await res.json();
-        addMessage({ role: "assistant", text: `Something went wrong: ${err.detail}` });
+      // — Crop only —
+      if (intent.action === "crop") {
+        addMessage({ role: "assistant", text: "Cropping your video..." });
+        const res = await fetch(
+          `http://localhost:8000/crop?job_id=${job_id}&aspectRatio=${intent.aspectRatio}`,
+          { method: "POST", body: formData }
+        );
+        if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Error: ${e.detail}` }); return; }
+        const data: ProcessResult = await res.json();
+        setStyle(s => ({ ...s, aspectRatio: intent.aspectRatio }));
+        addMessage({ role: "assistant", text: "Done! Opening in the editor." });
+        setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
         return;
       }
 
-      const data: ProcessResult = await res.json();
-
-      // Apply aspect ratio from intent
-      if (intent.aspectRatio && intent.aspectRatio !== "original") {
-        setStyle(s => ({ ...s, aspectRatio: intent.aspectRatio }));
+      // — Transcribe only —
+      if (intent.action === "transcribe") {
+        addMessage({ role: "assistant", text: "Transcribing your video..." });
+        const res = await fetch(
+          `http://localhost:8000/process?mode=transcribe&job_id=${job_id}`,
+          { method: "POST", body: formData }
+        );
+        if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Error: ${e.detail}` }); return; }
+        const data = await res.json();
+        addMessage({ role: "assistant", text: data.transcript });
+        return;
       }
 
-      addMessage({ role: "assistant", text: `Done! Opening your clip in the editor.` });
-      setTimeout(() => {
-        setResult(data);
-        setEditedSubtitles(null);
-        setSelectedClip(0);
-        setView("editor");
-      }, 800);
+      // — Add subtitles —
+      if (intent.action === "add_subtitles") {
+        addMessage({ role: "assistant", text: "Transcribing and adding subtitles to your clip..." });
+        // If we already have a clip, add subtitles to it directly (no re-upload)
+        const activeClipResult = result?.mode === "multi" ? result.clips?.[selectedClip] : result;
+        const existingSrtKey = activeClipResult && "srt_key" in activeClipResult ? (activeClipResult as ClipResult).srt_key : undefined;
+        const params = existingSrtKey
+          ? `srt_key=${existingSrtKey}`
+          : jobId ? `job_id=${jobId}` : null;
+
+        if (params) {
+          const res = await fetch(`http://localhost:8000/add-subtitles?${params}`, { method: "POST" });
+          if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Error: ${e.detail}` }); return; }
+          const data: ProcessResult = await res.json();
+          addMessage({ role: "assistant", text: "Done! Subtitles added." });
+          setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
+        } else {
+          // No existing clip — process full video with subtitles
+          const res = await fetch(
+            `http://localhost:8000/process?mode=add_subtitles&job_id=${job_id}&aspectRatio=${intent.aspectRatio}`,
+            { method: "POST", body: formData }
+          );
+          if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Error: ${e.detail}` }); return; }
+          const data: ProcessResult = await res.json();
+          addMessage({ role: "assistant", text: "Done! Opening in the editor." });
+          setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
+        }
+        return;
+      }
+
+      // — Find best moments (default) —
+      const mode = intent.count > 1 ? "multi" : "single";
+      addMessage({ role: "assistant", text: "Transcribing your video with Whisper..." });
+      const res = await fetch(
+        `http://localhost:8000/process?mode=${mode}&job_id=${job_id}&count=${intent.count}&aspectRatio=${intent.aspectRatio}&subtitles=${intent.subtitles}`,
+        { method: "POST", body: formData }
+      );
+      if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Something went wrong: ${e.detail}` }); return; }
+      const data: ProcessResult = await res.json();
+      if (intent.aspectRatio && intent.aspectRatio !== "original") setStyle(s => ({ ...s, aspectRatio: intent.aspectRatio }));
+      addMessage({ role: "assistant", text: "Done! Opening your clip in the editor." });
+      setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
 
     } catch {
       addMessage({ role: "assistant", text: "Something went wrong. Please try again." });
@@ -232,7 +275,7 @@ export default function Home() {
           const alpha = 0.09 + 0.4 * t * t;
           ctx.beginPath();
           ctx.arc(x, y, r, 0, Math.PI * 2);
-          ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+          ctx.fillStyle = `rgba(0,0,0,${alpha})`;
           ctx.fill();
         }
       }
@@ -306,23 +349,23 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col font-sans overflow-hidden">
       {/* Nav */}
-      <nav className={`flex-shrink-0 w-full px-8 py-4 flex items-center justify-between z-50 border-b ${view === "editor" ? "bg-white border-black/8" : "border-white/5"}`} style={view === "chat" ? { backgroundColor: "#0a0a0a" } : {}}>
-        <span className={`text-sm font-semibold tracking-tight ${view === "editor" ? "text-black" : "text-white"}`}>Wordcut</span>
+      <nav className="flex-shrink-0 w-full px-8 py-4 flex items-center justify-between z-50 border-b bg-white border-black/8">
+        <span className="text-sm font-semibold tracking-tight text-black">Wordcut</span>
         <div className="flex items-center gap-3">
           {view === "editor" && (
             <button onClick={() => setView("chat")} className="text-xs text-neutral-400 hover:text-black transition-colors">← Back to chat</button>
           )}
           {view === "chat" && result && (
-            <button onClick={() => setView("editor")} className="text-xs px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all">Back to editor →</button>
+            <button onClick={() => setView("editor")} className="text-xs px-3 py-1.5 rounded-full bg-black/5 hover:bg-black/10 text-black transition-all">Back to editor →</button>
           )}
         </div>
-        <span className={`text-xs px-3 py-1 rounded-full ${view === "editor" ? "text-neutral-400 bg-black/5" : "text-white/30 bg-white/5"}`}>AI Video Editor</span>
+        <span className="text-xs px-3 py-1 rounded-full text-neutral-400 bg-black/5">AI Video Editor</span>
       </nav>
 
       {/* Chat view */}
       {view === "chat" && (
         <main
-          className="flex-1 flex flex-col bg-neutral-950 overflow-hidden relative"
+          className="flex-1 flex flex-col bg-white overflow-hidden relative"
           onDragOver={(e) => { e.preventDefault(); setChatDragging(true); }}
           onDragLeave={() => setChatDragging(false)}
           onDrop={(e) => {
@@ -337,8 +380,8 @@ export default function Home() {
 
           {/* Drag overlay */}
           {chatDragging && (
-            <div className="absolute inset-0 z-50 bg-white/5 border-2 border-dashed border-white/20 flex items-center justify-center">
-              <p className="text-sm font-medium text-white">Drop your video</p>
+            <div className="absolute inset-0 z-50 bg-black/5 border-2 border-dashed border-black/20 flex items-center justify-center">
+              <p className="text-sm font-medium text-black">Drop your video</p>
             </div>
           )}
 
@@ -347,7 +390,7 @@ export default function Home() {
             <div className="relative z-10 flex-1 overflow-y-auto px-4 py-6 flex flex-col gap-3 max-w-2xl w-full mx-auto">
               {messages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-sm rounded-2xl px-4 py-3 text-sm ${msg.role === "user" ? "bg-white text-black rounded-br-sm" : "bg-white/[0.08] text-white rounded-bl-sm"}`}>
+                  <div className={`max-w-sm rounded-2xl px-4 py-3 text-sm ${msg.role === "user" ? "bg-black text-white rounded-br-sm" : "bg-black/[0.06] text-black rounded-bl-sm"}`}>
                     {msg.fileName && (
                       <p className="text-[11px] opacity-50 mb-1 font-mono">📎 {msg.fileName}</p>
                     )}
@@ -357,10 +400,10 @@ export default function Home() {
               ))}
               {processing && (
                 <div className="flex justify-start">
-                  <div className="bg-white/[0.08] rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1 items-center">
-                    <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
-                    <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
-                    <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                  <div className="bg-black/[0.06] rounded-2xl rounded-bl-sm px-4 py-3 flex gap-1 items-center">
+                    <div className="w-1.5 h-1.5 bg-black/30 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                    <div className="w-1.5 h-1.5 bg-black/30 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                    <div className="w-1.5 h-1.5 bg-black/30 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
                   </div>
                 </div>
               )}
@@ -369,7 +412,7 @@ export default function Home() {
           ) : (
             /* Hero — shown before first message */
             <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 gap-10">
-              <h1 className="text-white text-center" style={{ fontFamily: "'RomauntGaolines', serif", fontSize: "5rem", fontWeight: 400, lineHeight: 0.9 }}>
+              <h1 className="text-black text-center" style={{ fontFamily: "'RomauntGaolines', serif", fontSize: "5rem", fontWeight: 400, lineHeight: 0.9 }}>
                 Edit video with<br />just <span style={{ color: "#1e90ff", fontFamily: "'Playfair Display', Georgia, serif", fontStyle: "italic", fontWeight: 100, fontSize: "7rem", lineHeight: 0.9 }}>words.</span>
               </h1>
 
@@ -384,17 +427,17 @@ export default function Home() {
                   const f = e.dataTransfer.files[0];
                   if (f && f.type.startsWith("video/")) setChatFile(f);
                 }}
-                className={`w-full max-w-lg flex flex-col items-center justify-center gap-3 py-12 rounded-3xl border-2 border-dashed transition-all cursor-pointer ${chatDragging ? "border-white/40 bg-white/10" : "border-white/10 hover:border-white/25 hover:bg-white/[0.04]"}`}
+                className={`w-full max-w-lg flex flex-col items-center justify-center gap-3 py-12 rounded-3xl border-2 border-dashed transition-all cursor-pointer ${chatDragging ? "border-black/30 bg-black/5" : "border-black/10 hover:border-black/20 hover:bg-black/[0.02]"}`}
               >
-                <div className="w-14 h-14 rounded-2xl bg-white/[0.07] flex items-center justify-center text-2xl">▶</div>
-                <p className="text-white text-sm font-medium">Drop your video here</p>
-                <p className="text-white/30 text-xs">or click to browse · MP4, MOV, AVI</p>
+                <div className="w-14 h-14 rounded-2xl bg-black/[0.05] flex items-center justify-center text-2xl">▶</div>
+                <p className="text-black text-sm font-medium">Drop your video here</p>
+                <p className="text-black/30 text-xs">or click to browse · MP4, MOV, AVI</p>
               </button>
 
-              {chatFile && (
-                <div className="flex items-center gap-2 bg-white/[0.06] rounded-xl px-4 py-2">
-                  <span className="text-xs text-white/60 font-mono">📎 {chatFile.name}</span>
-                  <button onClick={() => setChatFile(null)} className="text-white/30 hover:text-white text-sm ml-2">✕</button>
+              {(chatFile ?? uploadedFile) && (
+                <div className="flex items-center gap-2 bg-black/[0.04] rounded-xl px-4 py-2">
+                  <span className="text-xs text-black/50 font-mono">📎 {(chatFile ?? uploadedFile)!.name}</span>
+                  {chatFile && <button onClick={() => setChatFile(null)} className="text-black/30 hover:text-black text-sm ml-2">✕</button>}
                 </div>
               )}
             </div>
@@ -409,7 +452,7 @@ export default function Home() {
                 <button
                   key={chip.label}
                   onClick={() => setChatInput(prev => prev ? `${prev} ${chip.text}` : chip.text)}
-                  className="text-[11px] px-3 py-1.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] text-white/50 hover:text-white border border-white/8 transition-all"
+                  className="text-[11px] px-3 py-1.5 rounded-full bg-black/[0.05] hover:bg-black/[0.10] text-black/50 hover:text-black border border-black/8 transition-all"
                 >
                   {chip.label}
                 </button>
@@ -417,11 +460,11 @@ export default function Home() {
             </div>
 
             {/* Input box with gradient border */}
-            <div className="p-px rounded-2xl" style={{ background: "linear-gradient(135deg, #ffffff22, #ffffff08)" }}>
-              <div className="bg-neutral-900 rounded-2xl px-4 py-3 flex items-center gap-3">
+            <div className="p-px rounded-2xl" style={{ background: "linear-gradient(135deg, #00000018, #00000008)" }}>
+              <div className="bg-white rounded-2xl px-4 py-3 flex items-center gap-3 border border-black/8">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex-shrink-0 text-white/30 hover:text-white transition-colors text-lg"
+                  className="flex-shrink-0 text-black/30 hover:text-black transition-colors text-lg"
                   title="Attach video"
                 >
                   ⊕
@@ -439,12 +482,12 @@ export default function Home() {
                   onChange={e => setChatInput(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                   placeholder="Describe what you want, or just drop a video..."
-                  className="flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/25"
+                  className="flex-1 bg-transparent text-sm text-black outline-none placeholder:text-black/25"
                 />
                 <button
                   onClick={handleSend}
                   disabled={processing || (!chatInput.trim() && !chatFile)}
-                  className="flex-shrink-0 w-8 h-8 rounded-xl bg-white flex items-center justify-center text-black text-sm font-bold transition-all hover:bg-white/90 disabled:bg-white/10 disabled:cursor-not-allowed"
+                  className="flex-shrink-0 w-8 h-8 rounded-xl bg-black flex items-center justify-center text-white text-sm font-bold transition-all hover:bg-neutral-800 disabled:bg-black/10 disabled:cursor-not-allowed"
                 >
                   ↑
                 </button>

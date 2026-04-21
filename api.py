@@ -8,7 +8,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -29,10 +29,11 @@ from Backend.subtitles import (
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
 
 os.makedirs("temp/clips_out", exist_ok=True)
 app.mount("/clips", StaticFiles(directory="temp/clips_out"), name="clips")
@@ -173,21 +174,28 @@ class IntentRequest(BaseModel):
 
 @app.post("/parse-intent")
 async def parse_intent(req: IntentRequest):
-    response = client.chat.completions.create(
+    r = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
             {"role": "system", "content": """Extract video editing intent from the user message. Return ONLY valid JSON:
 {
-  "mode": "best_moments" or "transcribe_only",
+  "action": "find_best_moments" or "crop" or "add_subtitles" or "transcribe",
   "count": 1 to 3,
-  "aspectRatio": "original" or "9/16" or "16/9" or "1/1" or "4/5"
+  "aspectRatio": "original" or "9/16" or "16/9" or "1/1" or "4/5",
+  "subtitles": true or false
 }
-Defaults: mode=transcribe_only, count=1, aspectRatio=original"""},
+Rules:
+- "find_best_moments": user wants clips, highlights, best parts, viral moments
+- "crop": user only mentions aspect ratio or cropping, no AI processing
+- "add_subtitles": user wants captions or subtitles burned in
+- "transcribe": user wants to see the text/transcript only
+- "subtitles": true ONLY if user explicitly mentions subtitles, captions, or text on video
+Defaults: action=find_best_moments, count=1, aspectRatio=original, subtitles=false"""},
             {"role": "user", "content": req.message}
         ],
         response_format={"type": "json_object"}
     )
-    return json.loads(response.choices[0].message.content)
+    return Response(content=r.choices[0].message.content, media_type="application/json")
 
 
 # ── routes ───────────────────────────────────────────────────────────────────
@@ -197,8 +205,90 @@ def root():
     return {"status": "running"}
 
 
+@app.post("/add-subtitles")
+async def add_subtitles_to_clip(job_id: str = "", srt_key: str = ""):
+    if srt_key:
+        parts = srt_key.split("_")
+        if len(parts) >= 2:
+            # multi clip: srt_key = "jobid_clipindex"
+            clip_path = os.path.abspath(f"temp/clips_out/{parts[0]}_v{parts[1]}.mp4")
+            video_url = f"/clips/{parts[0]}_v{parts[1]}.mp4"
+        else:
+            # single clip: srt_key = "jobid"
+            clip_path = os.path.abspath(f"temp/clips_out/{srt_key}_v.mp4")
+            video_url = f"/clips/{srt_key}_v.mp4"
+        out_srt = f"temp/{srt_key}.srt"
+        out_words = f"temp/{srt_key}_words.json"
+        key = srt_key
+    else:
+        clip_path = os.path.abspath(f"temp/clips_out/{job_id}_v.mp4")
+        out_srt = f"temp/{job_id}.srt"
+        out_words = f"temp/{job_id}_words.json"
+        video_url = f"/clips/{job_id}_v.mp4"
+        key = job_id
+
+    if not os.path.exists(clip_path):
+        raise HTTPException(status_code=404, detail="Clip not found. Process the video first.")
+
+    try:
+        audio = extract_audio(clip_path)
+        transcript = transcribe_audio(audio)
+        moments = [{"start": transcript.segments[0]["start"], "end": transcript.segments[-1]["end"]}]
+        _, sub_data = generate_srt(transcript, moments, output_path=out_srt)
+        sub_json = subtitles_to_json(sub_data)
+        with open(out_words, "w") as wf:
+            json.dump(sub_json, wf)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return Response(content=json.dumps({
+        "mode": "single",
+        "video_url": video_url,
+        "subtitles": sub_json,
+        "srt_key": key,
+    }), media_type="application/json")
+
+
+@app.post("/crop")
+async def crop_video(file: UploadFile = File(...), aspectRatio: str = "9/16", job_id: str = ""):
+    input_path = f"temp/{job_id}_input.mp4"
+    os.makedirs("temp", exist_ok=True)
+    os.makedirs("temp/clips_out", exist_ok=True)
+    with open(input_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    out_path = f"temp/clips_out/{job_id}_cropped.mp4"
+    crop_map = {
+        "16/9": "crop=iw:iw*9/16",
+        "1/1":  "crop=min(iw\\,ih):min(iw\\,ih)",
+        "4/5":  "crop=ih*4/5:ih",
+    }
+    try:
+        if aspectRatio == "9/16":
+            reframe_to_vertical(input_path, output_path=out_path)
+        elif aspectRatio in crop_map:
+            ffmpeg_bin, _ = _resolve_ffmpeg_bin()
+            subprocess.run([
+                ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                "-i", input_path, "-vf", crop_map[aspectRatio],
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "copy", out_path,
+            ], check=True)
+        else:
+            shutil.copy(input_path, out_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return Response(content=json.dumps({
+        "mode": "single",
+        "video_url": f"/clips/{job_id}_cropped.mp4",
+        "subtitles": [],
+        "srt_key": job_id,
+        "aspectRatio": aspectRatio,
+    }), media_type="application/json")
+
+
 @app.post("/process")
-async def process_video(file: UploadFile = File(...), mode: str = "single", job_id: str = "", count: int = 1, aspectRatio: str = "original"):
+async def process_video(file: UploadFile = File(...), mode: str = "single", job_id: str = "", count: int = 1, aspectRatio: str = "original", subtitles: bool = False):
     input_path = f"temp/{job_id}_input.mp4"
     os.makedirs("temp", exist_ok=True)
 
@@ -208,6 +298,28 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
     try:
         audio = extract_audio(input_path)
         transcript = transcribe_audio(audio)
+
+        # Transcribe only — return text to chat, no cutting
+        if mode == "transcribe":
+            text = " ".join(seg["text"].strip() for seg in transcript.segments)
+            return Response(content=json.dumps({"mode": "transcribe", "transcript": text}), media_type="application/json")
+
+        # Add subtitles to original video — no cutting
+        if mode == "add_subtitles":
+            out_path = f"temp/clips_out/{job_id}_v.mp4"
+            shutil.copy(input_path, out_path)
+            srt, sub_data = generate_srt(transcript, [{"start": 0, "end": transcript.segments[-1]["end"]}], output_path=f"temp/{job_id}.srt")
+            sub_json = subtitles_to_json(sub_data)
+            with open(f"temp/{job_id}_words.json", "w") as wf:
+                json.dump(sub_json, wf)
+            return Response(content=json.dumps({
+                "mode": "single",
+                "video_url": f"/clips/{job_id}_v.mp4",
+                "subtitles": sub_json,
+                "srt_key": job_id,
+                "aspectRatio": aspectRatio,
+            }), media_type="application/json")
+
         count = count if mode == "multi" else 1
         moments = find_best_moments(transcript, count=count)
 
@@ -216,10 +328,12 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
                 merged = cut_and_merge(input_path, [moment], output_path=f"temp/{job_id}_clip{i}.mp4")
                 out_path = f"temp/clips_out/{job_id}_v{i}.mp4"
                 shutil.copy(merged, out_path)
-                srt, sub_data = generate_srt(transcript, [moment], output_path=f"temp/{job_id}_{i}.srt")
-                sub_json = subtitles_to_json(sub_data)
-                with open(f"temp/{job_id}_{i}_words.json", "w") as wf:
-                    json.dump(sub_json, wf)
+                sub_json = []
+                if subtitles:
+                    _, sub_data = generate_srt(transcript, [moment], output_path=f"temp/{job_id}_{i}.srt")
+                    sub_json = subtitles_to_json(sub_data)
+                    with open(f"temp/{job_id}_{i}_words.json", "w") as wf:
+                        json.dump(sub_json, wf)
                 return i, {"video_url": f"/clips/{job_id}_v{i}.mp4", "subtitles": sub_json, "srt_key": f"{job_id}_{i}"}
 
             with ThreadPoolExecutor(max_workers=3) as executor:
@@ -229,24 +343,26 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
                     i, clip = f.result()
                     results[i] = clip
             clips = [results[i] for i in sorted(results)]
-            return {"mode": "multi", "clips": clips}
+            return Response(content=json.dumps({"mode": "multi", "clips": clips}), media_type="application/json")
 
         else:
             merged = cut_and_merge(input_path, moments, output_path=f"temp/{job_id}_merged.mp4")
             out_path = f"temp/clips_out/{job_id}_v.mp4"
             shutil.copy(merged, out_path)
 
-            srt, sub_data = generate_srt(transcript, moments, output_path=f"temp/{job_id}.srt")
-            sub_json = subtitles_to_json(sub_data)
-            with open(f"temp/{job_id}_words.json", "w") as wf:
-                json.dump(sub_json, wf)
-            return {
+            sub_json = []
+            if subtitles:
+                _, sub_data = generate_srt(transcript, moments, output_path=f"temp/{job_id}.srt")
+                sub_json = subtitles_to_json(sub_data)
+                with open(f"temp/{job_id}_words.json", "w") as wf:
+                    json.dump(sub_json, wf)
+            return Response(content=json.dumps({
                 "mode": "single",
                 "video_url": f"/clips/{job_id}_v.mp4",
                 "subtitles": sub_json,
-                "job_id": job_id,
+                "srt_key": job_id,
                 "aspectRatio": aspectRatio,
-            }
+            }), media_type="application/json")
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -300,5 +416,4 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
         burn_with_style(source, srt_path, out_path, style, words_path=words_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
     return FileResponse(out_path, media_type="video/mp4", filename="clip_exported.mp4")
