@@ -62,6 +62,7 @@ export default function Home() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const dotCanvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -184,6 +185,64 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  useEffect(() => {
+    if (result) return;
+    const canvas = dotCanvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    const SPACING = 24;
+    const BASE_R = 1.5;
+    const MAX_R = 7;
+    const INFLUENCE = 90;
+
+    let mx = -999, my = -999;
+    let raf: number;
+
+    const resize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    resize();
+    window.addEventListener("resize", resize);
+
+    const onMove = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      mx = e.clientX - rect.left;
+      my = e.clientY - rect.top;
+    };
+    window.addEventListener("mousemove", onMove);
+
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const cols = Math.ceil(canvas.width / SPACING) + 1;
+      const rows = Math.ceil(canvas.height / SPACING) + 1;
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const x = col * SPACING;
+          const y = row * SPACING;
+          const dist = Math.hypot(mx - x, my - y);
+          const t = Math.max(0, 1 - dist / INFLUENCE);
+          const r = BASE_R + (MAX_R - BASE_R) * t * t;
+          const alpha = 0.09 + 0.4 * t * t;
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+          ctx.fill();
+        }
+      }
+      raf = requestAnimationFrame(draw);
+    };
+    draw();
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("mousemove", onMove);
+    };
+  }, [result]);
+
   const onTimelineDrag = (e: React.MouseEvent) => {
     const startY = e.clientY;
     const startH = timelineHeight;
@@ -243,8 +302,8 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col font-sans overflow-hidden">
       {/* Nav */}
-      <nav className={`flex-shrink-0 w-full px-8 py-4 flex items-center justify-between z-50 border-b ${result ? "bg-white border-black/8" : "bg-neutral-950 border-white/5"}`}>
-        <span className={`text-sm font-semibold tracking-tight ${result ? "text-black" : "text-white"}`}>ClipForge</span>
+      <nav className={`flex-shrink-0 w-full px-8 py-4 flex items-center justify-between z-50 border-b ${result ? "bg-white border-black/8" : "border-white/5"}`} style={!result ? { backgroundColor: "#0a0a0a" } : {}}>
+        <span className={`text-sm font-semibold tracking-tight ${result ? "text-black" : "text-white"}`}>Wordcut</span>
         {result && (
           <button onClick={() => setResult(null)} className="text-xs text-neutral-400 hover:text-black transition-colors">← Back to chat</button>
         )}
@@ -264,6 +323,9 @@ export default function Home() {
             if (f && f.type.startsWith("video/")) setChatFile(f);
           }}
         >
+          {/* Kinetic dot grid canvas */}
+          <canvas ref={dotCanvasRef} className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 0 }} />
+
           {/* Drag overlay */}
           {chatDragging && (
             <div className="absolute inset-0 z-50 bg-white/5 border-2 border-dashed border-white/20 flex items-center justify-center">
@@ -273,7 +335,7 @@ export default function Home() {
 
           {/* Messages — only show when there's more than the initial greeting */}
           {messages.length > 1 ? (
-            <div className="flex-1 overflow-y-auto px-4 py-6 flex flex-col gap-3 max-w-2xl w-full mx-auto">
+            <div className="relative z-10 flex-1 overflow-y-auto px-4 py-6 flex flex-col gap-3 max-w-2xl w-full mx-auto">
               {messages.map((msg, i) => (
                 <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-sm rounded-2xl px-4 py-3 text-sm ${msg.role === "user" ? "bg-white text-black rounded-br-sm" : "bg-white/[0.08] text-white rounded-bl-sm"}`}>
@@ -297,23 +359,40 @@ export default function Home() {
             </div>
           ) : (
             /* Hero — shown before first message */
-            <div className="flex-1 flex flex-col items-center justify-center px-4">
-              <h1 className="text-5xl font-bold tracking-tight text-white text-center leading-tight mb-3">
-                Edit video with<br />just words.
+            <div className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 gap-10">
+              <h1 className="text-white text-center" style={{ fontFamily: "'RomauntGaolines', serif", fontSize: "5rem", fontWeight: 400, lineHeight: 0.9 }}>
+                Edit video with<br />just <span style={{ color: "#1e90ff", fontFamily: "'Playfair Display', Georgia, serif", fontStyle: "italic", fontWeight: 100, fontSize: "7rem", lineHeight: 0.9 }}>words.</span>
               </h1>
-              <p className="text-white/40 text-base text-center mb-10">Drop a video. Tell us what you want. Done.</p>
+
+              {/* Big drop zone */}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => { e.preventDefault(); setChatDragging(true); }}
+                onDragLeave={() => setChatDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setChatDragging(false);
+                  const f = e.dataTransfer.files[0];
+                  if (f && f.type.startsWith("video/")) setChatFile(f);
+                }}
+                className={`w-full max-w-lg flex flex-col items-center justify-center gap-3 py-12 rounded-3xl border-2 border-dashed transition-all cursor-pointer ${chatDragging ? "border-white/40 bg-white/10" : "border-white/10 hover:border-white/25 hover:bg-white/[0.04]"}`}
+              >
+                <div className="w-14 h-14 rounded-2xl bg-white/[0.07] flex items-center justify-center text-2xl">▶</div>
+                <p className="text-white text-sm font-medium">Drop your video here</p>
+                <p className="text-white/30 text-xs">or click to browse · MP4, MOV, AVI</p>
+              </button>
+
+              {chatFile && (
+                <div className="flex items-center gap-2 bg-white/[0.06] rounded-xl px-4 py-2">
+                  <span className="text-xs text-white/60 font-mono">📎 {chatFile.name}</span>
+                  <button onClick={() => setChatFile(null)} className="text-white/30 hover:text-white text-sm ml-2">✕</button>
+                </div>
+              )}
             </div>
           )}
 
           {/* Input area */}
-          <div className="flex-shrink-0 px-4 pb-8 max-w-2xl w-full mx-auto">
-            {/* File preview */}
-            {chatFile && (
-              <div className="flex items-center gap-2 mb-2 bg-white/[0.06] rounded-xl px-3 py-2">
-                <span className="text-xs text-white/50 truncate flex-1 font-mono">📎 {chatFile.name}</span>
-                <button onClick={() => setChatFile(null)} className="text-white/30 hover:text-white text-sm transition-colors">✕</button>
-              </div>
-            )}
+          <div className="relative z-10 flex-shrink-0 px-4 pb-8 max-w-2xl w-full mx-auto">
 
             {/* Quick chips */}
             <div className="flex gap-2 mb-3 flex-wrap">
@@ -372,7 +451,7 @@ export default function Home() {
           {/* Main row: video + sidebar */}
           <div className="flex-1 flex overflow-hidden">
             {/* Left — video stage */}
-            <div className="flex-1 bg-neutral-50 flex flex-col items-center justify-center p-8 relative overflow-auto">
+            <div className="flex-1 bg-neutral-50 flex flex-col items-center justify-center p-8 relative overflow-auto" style={{ backgroundImage: "radial-gradient(circle, #b0b0b0 1px, transparent 1px)", backgroundSize: "24px 24px" }}>
               {/* Clip tabs */}
               {result.mode === "multi" && (
                 <div className="flex gap-2 p-1 bg-black/[0.04] rounded-xl mb-6">

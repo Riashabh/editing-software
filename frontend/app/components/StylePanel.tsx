@@ -36,7 +36,18 @@ export const DEFAULT_STYLE: SubStyle = {
 };
 
 
-const FONTS = ["Arial", "Impact", "Georgia", "Helvetica", "Courier New", "Verdana", "Trebuchet MS"];
+const FONTS = [
+  // System
+  "Arial", "Impact", "Georgia", "Helvetica", "Courier New", "Verdana",
+  // Display / Bold
+  "Bebas Neue", "Anton", "Bungee", "Righteous", "Archivo Black", "Black Han Sans",
+  // Condensed
+  "Oswald", "Barlow Condensed",
+  // Serif editorial
+  "Playfair Display", "DM Serif Display",
+  // Handwritten
+  "Permanent Marker",
+];
 
 const PRESETS: { name: string; style: Partial<SubStyle> }[] = [
   {
