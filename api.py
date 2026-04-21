@@ -162,6 +162,7 @@ class StyleSettings(BaseModel):
     karaoke: bool = False
     karaokeColor: str = "#ffe600"
     aspectRatio: str = "original"
+    subtitles: list = []
 
 
 # ── routes ───────────────────────────────────────────────────────────────────
@@ -248,6 +249,13 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
             "1/1":  "crop=min(iw\\,ih):min(iw\\,ih)",
             "4/5":  "crop=ih*4/5:ih",
         }
+        if style.subtitles:
+            with open(srt_path, "w", encoding="utf-8") as f:
+                for idx, sub in enumerate(style.subtitles, 1):
+                    f.write(f"{idx}\n")
+                    f.write(f"{_seconds_to_srt_ts(sub['start'])} --> {_seconds_to_srt_ts(sub['end'])}\n")
+                    f.write(f"{sub['text']}\n\n")
+
         source = video_path
         if style.aspectRatio == "9/16":
             cropped = out_path.replace(".mp4", "_reframed.mp4")

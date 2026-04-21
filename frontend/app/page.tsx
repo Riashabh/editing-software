@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import VideoPlayer from "./components/VideoPlayer";
 import StylePanel, { SubStyle, Subtitle, DEFAULT_STYLE } from "./components/StylePanel";
 
@@ -82,6 +82,19 @@ export default function Home() {
     if (next) v.currentTime = next.start;
   };
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code === "Space" && e.target === document.body) {
+        e.preventDefault();
+        const v = videoRef.current;
+        if (!v) return;
+        v.paused ? v.play() : v.pause();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   const onTimelineDrag = (e: React.MouseEvent) => {
     const startY = e.clientY;
     const startH = timelineHeight;
@@ -157,7 +170,7 @@ export default function Home() {
       const res = await fetch(`http://localhost:8000/export?${params}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(style),
+        body: JSON.stringify({ ...style, subtitles: displaySubtitles }),
       });
       if (!res.ok) {
         const err = await res.json();
@@ -343,6 +356,7 @@ export default function Home() {
 
           {/* Controls bar */}
           <div className="flex-shrink-0 h-11 bg-white border-t border-black/8 flex items-center justify-center gap-4 px-4 relative">
+            <div onMouseDown={onTimelineDrag} className="absolute top-0 left-0 right-0 h-1 cursor-row-resize" />
             {/* Prev / Play / Next */}
             <button onClick={handlePrevSub} className="text-neutral-400 hover:text-black transition-colors text-base">⏮</button>
             <button onClick={handlePlayPause} className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white text-sm hover:bg-neutral-800 transition-colors">
@@ -352,23 +366,15 @@ export default function Home() {
             <span className="text-xs text-neutral-400 font-mono">{formatTime(currentTime)} / {formatTime(duration)}</span>
 
             {/* Zoom slider — right side */}
-            <div className="absolute right-4 flex items-center gap-2">
-              <button onClick={() => setZoomPct(z => Math.max(5, z - 15))} className="text-neutral-400 hover:text-black text-base transition-colors">−</button>
-              <div className="relative w-24">
-                <input
-                  type="range" min={5} max={100} value={zoomPct}
-                  onChange={e => setZoomPct(Number(e.target.value))}
-                  className="w-full accent-black"
-                />
-                {/* Tooltip */}
-                <div
-                  className="pointer-events-none absolute -top-6 bg-black text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md"
-                  style={{ left: `calc(${zoomPct}% - 14px)` }}
-                >
-                  {zoomPct}%
-                </div>
-              </div>
-              <button onClick={() => setZoomPct(z => Math.min(100, z + 15))} className="text-neutral-400 hover:text-black text-base transition-colors">+</button>
+            <div className="absolute right-4 flex items-center gap-1.5">
+              <button onClick={() => setZoomPct(z => Math.max(5, z - 15))} className="text-neutral-300 hover:text-black text-xs leading-none transition-colors">−</button>
+              <input
+                type="range" min={5} max={100} value={zoomPct}
+                onChange={e => setZoomPct(Number(e.target.value))}
+                className="w-20 accent-black cursor-pointer"
+                style={{ height: 2 }}
+              />
+              <button onClick={() => setZoomPct(z => Math.min(100, z + 15))} className="text-neutral-300 hover:text-black text-xs leading-none transition-colors">+</button>
             </div>
           </div>
 
@@ -385,16 +391,20 @@ export default function Home() {
             for (let t = 0; t <= totalDuration + step; t += step) ticks.push(parseFloat(t.toFixed(1)));
 
             return (
-              <div className="relative flex-shrink-0 bg-white border-t border-black/8" style={{ height: timelineHeight }}>
-                {/* Drag handle */}
-                <div onMouseDown={onTimelineDrag} className="absolute top-0 left-0 right-0 h-1 cursor-row-resize hover:bg-black/10 transition-colors z-20" />
+              <div className="relative flex-shrink-0 bg-white" style={{ height: timelineHeight }}>
                 {/* Right fade */}
                 <div className="pointer-events-none absolute top-0 right-0 w-10 h-full bg-gradient-to-l from-white to-transparent z-10" />
 
                 <div className="h-full overflow-x-auto overflow-y-hidden">
                   <div className="relative h-full" style={{ width: totalWidth }}>
                     {/* Timecode ruler */}
-                    <div className="relative h-5 border-b border-black/8">
+                    <div className="relative h-5 border-b border-black/8 cursor-pointer" onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const time = clipStart + (e.clientX - rect.left - 16) / PX_PER_SEC;
+                        if (videoRef.current) videoRef.current.currentTime = Math.max(0, time);
+                      }}>
+                      {/* Playhead marker on ruler */}
+                      <div className="absolute top-0 bottom-0 w-px bg-red-500 z-10 pointer-events-none" style={{ left: (currentTime - clipStart) * PX_PER_SEC + 16 }} />
                       {ticks.map(t => (
                         <div key={t} className="absolute top-0 flex items-center gap-1" style={{ left: t * PX_PER_SEC + 16 }}>
                           <div className="w-px h-2 bg-black/10" />
@@ -404,7 +414,33 @@ export default function Home() {
                     </div>
 
                     {/* Subtitle track */}
-                    <div className="relative mx-4" style={{ height: timelineHeight - RULER_H }}>
+                    <div className="relative mx-4 cursor-pointer" style={{ height: timelineHeight - RULER_H }} onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        const time = clipStart + (e.clientX - rect.left) / PX_PER_SEC;
+                        if (videoRef.current) videoRef.current.currentTime = Math.max(0, time);
+                      }}>
+                      {/* Playhead */}
+                      <div
+                        className="absolute top-0 bottom-0 w-3 -ml-1.5 z-20 cursor-ew-resize flex justify-center"
+                        style={{ left: (currentTime - clipStart) * PX_PER_SEC }}
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          const trackRect = e.currentTarget.parentElement!.getBoundingClientRect();
+                          const onMove = (ev: MouseEvent) => {
+                            const time = Math.max(0, clipStart + (ev.clientX - trackRect.left) / PX_PER_SEC);
+                            if (videoRef.current) videoRef.current.currentTime = time;
+                            setCurrentTime(time);
+                          };
+                          const onUp = () => {
+                            window.removeEventListener("mousemove", onMove);
+                            window.removeEventListener("mouseup", onUp);
+                          };
+                          window.addEventListener("mousemove", onMove);
+                          window.addEventListener("mouseup", onUp);
+                        }}
+                      >
+                        <div className="w-px h-full bg-red-500" />
+                      </div>
                       {displaySubtitles.map((sub, i) => {
                         const left = (sub.start - clipStart) * PX_PER_SEC;
                         const width = Math.max((sub.end - sub.start) * PX_PER_SEC - 3, 20);
