@@ -4,12 +4,16 @@ import re
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from openai import OpenAI
+from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+load_dotenv()
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 from Backend.extractor import extract_audio
 from Backend.analyzer import transcribe_audio, find_best_moments
 from Backend.editor import cut_and_merge
@@ -164,6 +168,27 @@ class StyleSettings(BaseModel):
     aspectRatio: str = "original"
     subtitles: list = []
 
+class IntentRequest(BaseModel):
+    message: str
+
+@app.post("/parse-intent")
+async def parse_intent(req: IntentRequest):
+    response = client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": """Extract video editing intent from the user message. Return ONLY valid JSON:
+{
+  "mode": "best_moments" or "transcribe_only",
+  "count": 1 to 3,
+  "aspectRatio": "original" or "9/16" or "16/9" or "1/1" or "4/5"
+}
+Defaults: mode=transcribe_only, count=1, aspectRatio=original"""},
+            {"role": "user", "content": req.message}
+        ],
+        response_format={"type": "json_object"}
+    )
+    return json.loads(response.choices[0].message.content)
+
 
 # ── routes ───────────────────────────────────────────────────────────────────
 
@@ -173,7 +198,7 @@ def root():
 
 
 @app.post("/process")
-async def process_video(file: UploadFile = File(...), mode: str = "single", job_id: str = ""):
+async def process_video(file: UploadFile = File(...), mode: str = "single", job_id: str = "", count: int = 1, aspectRatio: str = "original"):
     input_path = f"temp/{job_id}_input.mp4"
     os.makedirs("temp", exist_ok=True)
 
@@ -183,7 +208,7 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
     try:
         audio = extract_audio(input_path)
         transcript = transcribe_audio(audio)
-        count = 1 if mode == "single" else 3
+        count = count if mode == "multi" else 1
         moments = find_best_moments(transcript, count=count)
 
         if mode == "multi":
@@ -220,6 +245,7 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
                 "video_url": f"/clips/{job_id}_v.mp4",
                 "subtitles": sub_json,
                 "job_id": job_id,
+                "aspectRatio": aspectRatio,
             }
 
     except Exception as e:
