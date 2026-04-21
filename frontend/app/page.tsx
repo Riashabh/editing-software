@@ -48,6 +48,9 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // View state
+  const [view, setView] = useState<"chat" | "editor">("chat");
+
   // Editor state
   const [result, setResult] = useState<ProcessResult | null>(null);
   const [selectedClip, setSelectedClip] = useState(0);
@@ -135,6 +138,7 @@ export default function Home() {
         setResult(data);
         setEditedSubtitles(null);
         setSelectedClip(0);
+        setView("editor");
       }, 800);
 
     } catch {
@@ -186,7 +190,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (result) return;
+    if (view !== "chat") return;
     const canvas = dotCanvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
@@ -241,7 +245,7 @@ export default function Home() {
       window.removeEventListener("resize", resize);
       window.removeEventListener("mousemove", onMove);
     };
-  }, [result]);
+  }, [view]);
 
   const onTimelineDrag = (e: React.MouseEvent) => {
     const startY = e.clientY;
@@ -302,16 +306,21 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col font-sans overflow-hidden">
       {/* Nav */}
-      <nav className={`flex-shrink-0 w-full px-8 py-4 flex items-center justify-between z-50 border-b ${result ? "bg-white border-black/8" : "border-white/5"}`} style={!result ? { backgroundColor: "#0a0a0a" } : {}}>
-        <span className={`text-sm font-semibold tracking-tight ${result ? "text-black" : "text-white"}`}>Wordcut</span>
-        {result && (
-          <button onClick={() => setResult(null)} className="text-xs text-neutral-400 hover:text-black transition-colors">← Back to chat</button>
-        )}
-        <span className={`text-xs px-3 py-1 rounded-full ${result ? "text-neutral-400 bg-black/5" : "text-white/30 bg-white/5"}`}>AI Video Editor</span>
+      <nav className={`flex-shrink-0 w-full px-8 py-4 flex items-center justify-between z-50 border-b ${view === "editor" ? "bg-white border-black/8" : "border-white/5"}`} style={view === "chat" ? { backgroundColor: "#0a0a0a" } : {}}>
+        <span className={`text-sm font-semibold tracking-tight ${view === "editor" ? "text-black" : "text-white"}`}>Wordcut</span>
+        <div className="flex items-center gap-3">
+          {view === "editor" && (
+            <button onClick={() => setView("chat")} className="text-xs text-neutral-400 hover:text-black transition-colors">← Back to chat</button>
+          )}
+          {view === "chat" && result && (
+            <button onClick={() => setView("editor")} className="text-xs px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all">Back to editor →</button>
+          )}
+        </div>
+        <span className={`text-xs px-3 py-1 rounded-full ${view === "editor" ? "text-neutral-400 bg-black/5" : "text-white/30 bg-white/5"}`}>AI Video Editor</span>
       </nav>
 
       {/* Chat view */}
-      {!result && (
+      {view === "chat" && (
         <main
           className="flex-1 flex flex-col bg-neutral-950 overflow-hidden relative"
           onDragOver={(e) => { e.preventDefault(); setChatDragging(true); }}
@@ -446,7 +455,7 @@ export default function Home() {
       )}
 
       {/* Editor view */}
-      {result && activeClip && (
+      {view === "editor" && result && activeClip && (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Main row: video + sidebar */}
           <div className="flex-1 flex overflow-hidden">
