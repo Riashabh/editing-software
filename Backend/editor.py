@@ -9,24 +9,26 @@ def cut_and_merge(video_path, moments, output_path="output.mp4"):
         start = moment["start"]
         end = moment["end"]
         duration = end - start
-        clip_path = f"temp/clips/clip_{i}.mp4"
+        clip_path = output_path.replace(".mp4", f"_seg{i}.mp4")
 
         command = [
             "ffmpeg",
             "-ss", str(start),
             "-i", video_path,
             "-t", str(duration),
-            "-c:v", "libx264",
+            "-c:v", "libx264", "-preset", "ultrafast",
             "-c:a", "aac",
             clip_path,
             "-y"
         ]
+
+
         subprocess.run(command, check=True)
         clip_paths.append(clip_path)
         print(f"Cut clip {i+1}: {start}s to {end}s")
 
     # write concat file
-    concat_file = "temp/concat.txt"
+    concat_file = output_path.replace(".mp4", "_concat.txt")
     with open(concat_file, "w") as f:
         for clip_path in clip_paths:
             f.write(f"file '../{clip_path}'\n")

@@ -23,7 +23,8 @@ def extract_audio(video_path, output_path="temp/audio.mp3"):
     if not os.path.exists(video_path):
         raise FileNotFoundError(f"Video file not found: {video_path}")
     os.makedirs("temp", exist_ok=True)
-    command = ["ffmpeg", "-i", video_path, "-q:a", "0", "-map", "a", output_path, "-y"]
+    command = ["ffmpeg", "-i", video_path, "-ac", "1", "-ar", "16000", "-map", "a", output_path, "-y"]
+
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg audio extraction failed:\n{result.stderr}")

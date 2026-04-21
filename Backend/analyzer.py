@@ -2,21 +2,21 @@ import os
 import json
 import base64
 from openai import OpenAI
+from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
-# Temporary debug override: hardcode key to verify credential validity.
-# Move this back to os.getenv("OPENAI_API_KEY") after confirming.
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 def transcribe_audio(audio_path):
-    print("Transcribing audio with Whisper...")
+    print("Transcribing audio with Groq Whisper...")
     if not os.path.exists(audio_path):
         raise FileNotFoundError(f"Audio file not found: {audio_path}")
     with open(audio_path, "rb") as audio_file:
         try:
-            transcript = client.audio.transcriptions.create(
-                model="whisper-1",
+            transcript = groq_client.audio.transcriptions.create(
+                model="whisper-large-v3-turbo",
                 file=audio_file,
                 response_format="verbose_json",
                 timestamp_granularities=["word", "segment"]
@@ -31,13 +31,13 @@ def find_best_moments(transcript, count=1):
     print("Finding best moments with GPT-4o...")
     formatted = ""
     for segment in transcript.segments:
-        start = round(segment.start, 2)
-        end = round(segment.end, 2)
-        formatted += f"[{start}s - {end}s]: {segment.text}\n"
+        start = round(segment["start"], 2)
+        end = round(segment["end"], 2)
+        formatted += f"[{start}s - {end}s]: {segment['text']}\n"
     
     try:
         response = client.chat.completions.create(
-            model="gpt-4o",
+            model="gpt-4o-mini",
             messages=[
                 {"role": "system", "content": f"You are a video editor specializing in short-form content. Analyze this podcast transcript and find the {count} most compelling moment(s) — funniest, most insightful, or most emotional. Each clip MUST be between 30 and 45 seconds long. Return ONLY a JSON array like: [{{\"start\": 10.5, \"end\": 45.2, \"reason\": \"why this moment is good\"}}]. Never return a clip shorter than 30s or longer than 45s."},
                 {"role": "user", "content": formatted}

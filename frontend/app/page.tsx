@@ -3,16 +3,6 @@ import { useState, useRef } from "react";
 import VideoPlayer from "./components/VideoPlayer";
 import StylePanel, { SubStyle, Subtitle, DEFAULT_STYLE } from "./components/StylePanel";
 
-const STEP_MAP: Record<string, number> = {
-  extracting: 0,
-  transcribing: 1,
-  finding_moments: 2,
-  cutting: 3,
-  reframing: 4,
-  subtitles: 5,
-  done: 6,
-};
-
 const steps = [
   "Extracting audio",
   "Transcribing with Whisper",
@@ -36,6 +26,12 @@ interface ProcessResult {
   clips?: ClipResult[];
 }
 
+function formatTime(s: number) {
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return `${m}:${sec.toString().padStart(2, "0")}`;
+}
+
 export default function Home() {
   const [file, setFile] = useState<File | null>(null);
   const [dragging, setDragging] = useState(false);
@@ -48,7 +44,58 @@ export default function Home() {
   const [style, setStyle] = useState<SubStyle>(DEFAULT_STYLE);
   const [exporting, setExporting] = useState(false);
   const [jobId, setJobId] = useState("");
+  const [editedSubtitles, setEditedSubtitles] = useState<Subtitle[] | null>(null);
+  const [selectedSub, setSelectedSub] = useState<number | null>(null);
+  const [timelineHeight, setTimelineHeight] = useState(88);
+  const [zoomPct, setZoomPct] = useState(20);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const handleVideoMount = (el: HTMLVideoElement) => {
+    videoRef.current = el;
+    el.ontimeupdate = () => setCurrentTime(el.currentTime);
+    el.onloadedmetadata = () => setDuration(el.duration);
+    el.onplay = () => setIsPlaying(true);
+    el.onpause = () => setIsPlaying(false);
+  };
+
+  const handlePlayPause = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    isPlaying ? v.pause() : v.play();
+  };
+
+  const handlePrevSub = () => {
+    const v = videoRef.current;
+    if (!v || !displaySubtitles.length) return;
+    const prev = [...displaySubtitles].reverse().find(s => s.start < v.currentTime - 0.3);
+    if (prev) v.currentTime = prev.start;
+  };
+
+  const handleNextSub = () => {
+    const v = videoRef.current;
+    if (!v || !displaySubtitles.length) return;
+    const next = displaySubtitles.find(s => s.start > v.currentTime + 0.1);
+    if (next) v.currentTime = next.start;
+  };
+
+  const onTimelineDrag = (e: React.MouseEvent) => {
+    const startY = e.clientY;
+    const startH = timelineHeight;
+    const onMove = (ev: MouseEvent) => {
+      const newH = Math.max(60, Math.min(220, startH + (startY - ev.clientY)));
+      setTimelineHeight(newH);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   const handleFile = (f: File) => {
     setFile(f);
@@ -63,6 +110,7 @@ export default function Home() {
     setResult(null);
     setCurrentStep(-1);
     setErrorStep(-1);
+    setSelectedSub(null);
 
     const job_id = Math.random().toString(36).slice(2, 10);
     setJobId(job_id);
@@ -85,6 +133,7 @@ export default function Home() {
       }
       const data: ProcessResult = await res.json();
       setResult(data);
+      setEditedSubtitles(null);
       setSelectedClip(0);
     } catch {
       alert("Something went wrong.");
@@ -134,6 +183,8 @@ export default function Home() {
       : result.clips?.[selectedClip] ?? null
     : null;
 
+  const displaySubtitles = editedSubtitles ?? activeClip?.subtitles ?? [];
+
   return (
     <div className="h-screen flex flex-col font-sans overflow-hidden">
       {/* Nav */}
@@ -144,7 +195,7 @@ export default function Home() {
 
       {/* Upload view */}
       {!result && (
-        <main className="flex-1 flex flex-col items-center justify-center px-4 bg-white overflow-auto">
+        <main className="flex-1 flex flex-col items-center justify-start pt-16 px-4 bg-white overflow-auto">
           <div className="text-center mb-12">
             <h1 className="text-5xl font-semibold tracking-tight leading-tight text-black">
               Turn long videos<br />into viral clips.
@@ -206,53 +257,174 @@ export default function Home() {
 
       {/* Editor view */}
       {result && activeClip && (
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left — stage */}
-          <div className="flex-1 bg-neutral-50 flex flex-col items-center justify-center p-8 relative overflow-auto">
-            {/* Clip tabs */}
-            {result.mode === "multi" && (
-              <div className="flex gap-2 p-1 bg-black/[0.04] rounded-xl mb-6">
-                {result.clips?.map((_, i) => (
-                  <button key={i} onClick={() => setSelectedClip(i)} className={`px-5 py-1.5 text-xs font-medium rounded-lg transition-all ${selectedClip === i ? "bg-white shadow-sm text-black" : "text-neutral-400 hover:text-black"}`}>
-                    Clip {i + 1}
-                  </button>
-                ))}
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Main row: video + sidebar */}
+          <div className="flex-1 flex overflow-hidden">
+            {/* Left — video stage */}
+            <div className="flex-1 bg-neutral-50 flex flex-col items-center justify-center p-8 relative overflow-auto">
+              {/* Clip tabs */}
+              {result.mode === "multi" && (
+                <div className="flex gap-2 p-1 bg-black/[0.04] rounded-xl mb-6">
+                  {result.clips?.map((_, i) => (
+                    <button key={i} onClick={() => { setSelectedClip(i); setEditedSubtitles(null); setSelectedSub(null); }}
+                      className={`px-5 py-1.5 text-xs font-medium rounded-lg transition-all ${selectedClip === i ? "bg-white shadow-sm text-black" : "text-neutral-400 hover:text-black"}`}>
+                      Clip {i + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Video */}
+              <div
+                className="w-full"
+                style={{
+                  maxWidth: style.aspectRatio === "9/16" ? "300px"
+                    : style.aspectRatio === "4/5" ? "380px"
+                    : style.aspectRatio === "1/1" ? "500px"
+                    : "760px",
+                }}
+              >
+                <VideoPlayer
+                  key={activeClip.video_url}
+                  videoUrl={`http://localhost:8000${activeClip.video_url}`}
+                  subtitles={displaySubtitles}
+                  style={style}
+                  onVideoMount={handleVideoMount}
+                />
               </div>
-            )}
 
-            {/* Video */}
-            <div
-              className="w-full"
-              style={{
-                maxWidth: style.aspectRatio === "9/16" ? "300px"
-                  : style.aspectRatio === "4/5" ? "380px"
-                  : style.aspectRatio === "1/1" ? "500px"
-                  : "760px",
-              }}
-            >
-              <VideoPlayer
-                key={activeClip.video_url}
-                videoUrl={`http://localhost:8000${activeClip.video_url}`}
-                subtitles={activeClip.subtitles}
-                style={style}
-              />
+              {/* Back button */}
+              <button
+                onClick={() => setResult(null)}
+                className="absolute bottom-6 left-6 text-xs text-neutral-300 hover:text-black transition-colors"
+              >
+                ← New video
+              </button>
             </div>
 
-            {/* Back button */}
-            <button
-              onClick={() => setResult(null)}
-              className="absolute bottom-6 left-6 text-xs text-neutral-300 hover:text-black transition-colors"
-            >
-              ← New video
+            {/* Right — sidebar */}
+            <div className="w-80 bg-white border-l border-black/8 flex flex-col overflow-y-auto">
+              <div className="p-6 flex-1">
+                {selectedSub !== null ? (
+                  /* Subtitle editor mode */
+                  <div className="flex flex-col gap-4 h-full">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-medium text-black">Edit Subtitle</p>
+                      <button onClick={() => setSelectedSub(null)} className="text-xs text-neutral-400 hover:text-black transition-colors">← Back</button>
+                    </div>
+                    <p className="text-xs text-neutral-400 font-mono">
+                      {formatTime(displaySubtitles[selectedSub].start)} → {formatTime(displaySubtitles[selectedSub].end)}
+                    </p>
+                    <textarea
+                      value={displaySubtitles[selectedSub].text}
+                      onChange={(e) => {
+                        const updated = [...displaySubtitles];
+                        updated[selectedSub] = { ...updated[selectedSub], text: e.target.value };
+                        setEditedSubtitles(updated);
+                      }}
+                      autoFocus
+                      className="w-full bg-black/[0.04] border border-black/8 rounded-xl px-4 py-3 text-sm text-black outline-none resize-none"
+                      rows={5}
+                    />
+                    <button
+                      onClick={() => setSelectedSub(null)}
+                      className="w-full py-3 rounded-xl bg-black text-white text-xs font-medium hover:bg-neutral-800 transition-all"
+                    >
+                      Done
+                    </button>
+                  </div>
+                ) : (
+                  /* Style panel mode */
+                  <StylePanel style={style} onChange={setStyle} onExport={handleExport} exporting={exporting} />
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Controls bar */}
+          <div className="flex-shrink-0 h-11 bg-white border-t border-black/8 flex items-center justify-center gap-4 px-4 relative">
+            {/* Prev / Play / Next */}
+            <button onClick={handlePrevSub} className="text-neutral-400 hover:text-black transition-colors text-base">⏮</button>
+            <button onClick={handlePlayPause} className="w-8 h-8 rounded-full bg-black flex items-center justify-center text-white text-sm hover:bg-neutral-800 transition-colors">
+              {isPlaying ? "⏸" : "▶"}
             </button>
-          </div>
+            <button onClick={handleNextSub} className="text-neutral-400 hover:text-black transition-colors text-base">⏭</button>
+            <span className="text-xs text-neutral-400 font-mono">{formatTime(currentTime)} / {formatTime(duration)}</span>
 
-          {/* Right — style panel */}
-          <div className="w-80 bg-white border-l border-black/8 flex flex-col overflow-y-auto">
-            <div className="p-6 flex-1">
-              <StylePanel style={style} onChange={setStyle} onExport={handleExport} exporting={exporting} />
+            {/* Zoom slider — right side */}
+            <div className="absolute right-4 flex items-center gap-2">
+              <button onClick={() => setZoomPct(z => Math.max(5, z - 15))} className="text-neutral-400 hover:text-black text-base transition-colors">−</button>
+              <div className="relative w-24">
+                <input
+                  type="range" min={5} max={100} value={zoomPct}
+                  onChange={e => setZoomPct(Number(e.target.value))}
+                  className="w-full accent-black"
+                />
+                {/* Tooltip */}
+                <div
+                  className="pointer-events-none absolute -top-6 bg-black text-white text-[10px] font-medium px-1.5 py-0.5 rounded-md"
+                  style={{ left: `calc(${zoomPct}% - 14px)` }}
+                >
+                  {zoomPct}%
+                </div>
+              </div>
+              <button onClick={() => setZoomPct(z => Math.min(100, z + 15))} className="text-neutral-400 hover:text-black text-base transition-colors">+</button>
             </div>
           </div>
+
+          {/* Bottom — subtitle timeline */}
+          {(() => {
+            const PX_PER_SEC = 10 + (zoomPct / 100) * 150;
+            const RULER_H = 20;
+            const clipStart = displaySubtitles[0]?.start ?? 0;
+            const clipEnd = displaySubtitles[displaySubtitles.length - 1]?.end ?? 1;
+            const totalDuration = clipEnd - clipStart;
+            const totalWidth = Math.max(totalDuration * PX_PER_SEC + 80, 600);
+            const ticks: number[] = [];
+            const step = PX_PER_SEC >= 80 ? 1 : PX_PER_SEC >= 40 ? 2 : PX_PER_SEC >= 20 ? 5 : 10;
+            for (let t = 0; t <= totalDuration + step; t += step) ticks.push(parseFloat(t.toFixed(1)));
+
+            return (
+              <div className="relative flex-shrink-0 bg-white border-t border-black/8" style={{ height: timelineHeight }}>
+                {/* Drag handle */}
+                <div onMouseDown={onTimelineDrag} className="absolute top-0 left-0 right-0 h-1 cursor-row-resize hover:bg-black/10 transition-colors z-20" />
+                {/* Right fade */}
+                <div className="pointer-events-none absolute top-0 right-0 w-10 h-full bg-gradient-to-l from-white to-transparent z-10" />
+
+                <div className="h-full overflow-x-auto overflow-y-hidden">
+                  <div className="relative h-full" style={{ width: totalWidth }}>
+                    {/* Timecode ruler */}
+                    <div className="relative h-5 border-b border-black/8">
+                      {ticks.map(t => (
+                        <div key={t} className="absolute top-0 flex items-center gap-1" style={{ left: t * PX_PER_SEC + 16 }}>
+                          <div className="w-px h-2 bg-black/10" />
+                          <span className="text-[9px] text-neutral-400 font-mono leading-none">{formatTime(clipStart + t)}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Subtitle track */}
+                    <div className="relative mx-4" style={{ height: timelineHeight - RULER_H }}>
+                      {displaySubtitles.map((sub, i) => {
+                        const left = (sub.start - clipStart) * PX_PER_SEC;
+                        const width = Math.max((sub.end - sub.start) * PX_PER_SEC - 3, 20);
+                        return (
+                          <button
+                            key={i}
+                            onClick={() => setSelectedSub(i)}
+                            style={{ position: "absolute", left, width, top: 6, bottom: 6 }}
+                            className={`rounded-md px-2 text-left text-[11px] font-medium truncate transition-all overflow-hidden ${selectedSub === i ? "bg-black text-white" : "bg-black/[0.06] text-black hover:bg-black/[0.12]"}`}
+                          >
+                            {sub.text}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>

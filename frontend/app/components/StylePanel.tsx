@@ -72,6 +72,7 @@ interface Props {
   exporting: boolean;
 }
 
+
 function Toggle({ on, onClick }: { on: boolean; onClick: () => void }) {
   return (
     <button
@@ -88,7 +89,7 @@ export default function StylePanel({ style, onChange, onExport, exporting }: Pro
     onChange({ ...style, [key]: val });
 
   return (
-    <div className="flex flex-col gap-5 h-full">
+    <div className="flex flex-col gap-5">
       <p className="text-xs font-medium text-black">Subtitle Style</p>
       {/* Presets */}
       <div>
@@ -220,14 +221,17 @@ export default function StylePanel({ style, onChange, onExport, exporting }: Pro
         </div>
       </div>
 
+
       {/* Export */}
       <button
         onClick={onExport}
         disabled={exporting}
-        className="mt-auto w-full py-3 rounded-xl bg-black text-white text-xs font-medium transition-all hover:bg-neutral-800 disabled:bg-neutral-200 disabled:text-neutral-400 disabled:cursor-not-allowed"
+        className="w-full py-3 rounded-xl bg-black text-white text-xs font-medium transition-all hover:bg-neutral-800 disabled:bg-neutral-200 disabled:text-neutral-400 disabled:cursor-not-allowed"
       >
         {exporting ? "Exporting..." : "Export Clip"}
       </button>
+
+
     </div>
   );
 }

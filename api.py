@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.responses import FileResponse
@@ -185,21 +186,23 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
         moments = find_best_moments(transcript, count=count)
 
         if mode == "multi":
-            clips = []
-            for i, moment in enumerate(moments):
+            def process_clip(i, moment):
                 merged = cut_and_merge(input_path, [moment], output_path=f"temp/{job_id}_clip{i}.mp4")
                 out_path = f"temp/clips_out/{job_id}_v{i}.mp4"
                 shutil.copy(merged, out_path)
-
                 srt, sub_data = generate_srt(transcript, [moment], output_path=f"temp/{job_id}_{i}.srt")
                 sub_json = subtitles_to_json(sub_data)
                 with open(f"temp/{job_id}_{i}_words.json", "w") as wf:
                     json.dump(sub_json, wf)
-                clips.append({
-                    "video_url": f"/clips/{job_id}_v{i}.mp4",
-                    "subtitles": sub_json,
-                    "srt_key": f"{job_id}_{i}",
-                })
+                return i, {"video_url": f"/clips/{job_id}_v{i}.mp4", "subtitles": sub_json, "srt_key": f"{job_id}_{i}"}
+
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                futures = {executor.submit(process_clip, i, m): i for i, m in enumerate(moments)}
+                results = {}
+                for f in as_completed(futures):
+                    i, clip = f.result()
+                    results[i] = clip
+            clips = [results[i] for i in sorted(results)]
             return {"mode": "multi", "clips": clips}
 
         else:

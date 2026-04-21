@@ -26,19 +26,19 @@ def generate_srt(transcript, moments, output_path="temp/subtitles.srt"):
         m_start = moment["start"]
         m_end = moment["end"]
 
-        words = [w for w in transcript.words if w.start >= m_start and w.end <= m_end]
+        words = [w for w in transcript.words if w["start"] >= m_start and w["end"] <= m_end]
 
         chunk_size = 3
         for i in range(0, len(words), chunk_size):
             chunk = words[i:i + chunk_size]
-            start = chunk[0].start - m_start + time_offset
-            end = chunk[-1].end - m_start + time_offset
-            text = " ".join(w.word.strip() for w in chunk)
+            start = chunk[0]["start"] - m_start + time_offset
+            end = chunk[-1]["end"] - m_start + time_offset
+            text = " ".join(w["word"].strip() for w in chunk)
             word_timings = [
                 {
-                    "word": w.word.strip(),
-                    "start": w.start - m_start + time_offset,
-                    "end": w.end - m_start + time_offset,
+                    "word": w["word"].strip(),
+                    "start": w["start"] - m_start + time_offset,
+                    "end": w["end"] - m_start + time_offset,
                 }
                 for w in chunk
             ]

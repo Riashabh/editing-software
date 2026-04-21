@@ -6,11 +6,17 @@ interface Props {
   videoUrl: string;
   subtitles: Subtitle[];
   style: SubStyle;
+  onVideoMount?: (el: HTMLVideoElement) => void;
 }
 
-export default function VideoPlayer({ videoUrl, subtitles, style }: Props) {
+export default function VideoPlayer({ videoUrl, subtitles, style, onVideoMount }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current && onVideoMount) onVideoMount(videoRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoUrl]);
 
   useEffect(() => {
     const video = videoRef.current;
