@@ -9,3 +9,5 @@ __pycache__/
 .venv/
 frontend/node_modules/
 frontend/.next/
+remotion-renderer/node_modules/
+remotion-renderer/.remotion/
