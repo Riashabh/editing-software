@@ -1,4 +1,5 @@
 import base64
+import glob
 import json
 import os
 import re
@@ -36,8 +37,24 @@ app.add_middleware(
 )
 
 
+def _clean_temp():
+    for folder in ["temp/clips_out", "temp"]:
+        if os.path.exists(folder):
+            for f in os.listdir(folder):
+                p = os.path.join(folder, f)
+                if os.path.isfile(p):
+                    os.remove(p)
+
+_clean_temp()
 os.makedirs("temp/clips_out", exist_ok=True)
 app.mount("/clips", StaticFiles(directory="temp/clips_out"), name="clips")
+
+
+@app.post("/cleanup")
+def cleanup():
+    _clean_temp()
+    os.makedirs("temp/clips_out", exist_ok=True)
+    return {"status": "cleaned"}
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -178,23 +195,43 @@ async def parse_intent(req: IntentRequest):
     r = client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": """Extract video editing intent from the user message. Return ONLY valid JSON:
+            {"role": "system", "content": """Extract video editing intent from the user message. Return ONLY valid JSON with a steps array:
 {
-  "action": "find_best_moments" or "crop" or "add_subtitles" or "transcribe" or "animate",
-  "count": 1 to 3,
-  "aspectRatio": "original" or "9/16" or "16/9" or "1/1" or "4/5",
-  "subtitles": true or false,
-  "overlay": true or false
+  "steps": [
+    {
+      "action": "find_best_moments" | "crop" | "add_subtitles" | "transcribe" | "animate",
+      "count": 1 to 3,
+      "aspectRatio": "original" | "9/16" | "16/9" | "1/1" | "4/5",
+      "subtitles": true | false,
+      "overlay": true | false,
+      "position": number
+    }
+  ]
 }
-Rules:
+
+Action rules:
 - "find_best_moments": user wants clips, highlights, best parts, viral moments
-- "crop": user only mentions aspect ratio or cropping, no AI processing
-- "add_subtitles": user wants captions or subtitles burned in
-- "transcribe": user wants to see the text/transcript only
-- "animate": user wants motion graphics, animations, intro, outro, effects, visuals
-- "subtitles": true ONLY if user explicitly mentions subtitles, captions, or text on video
-- "overlay": true if animation should go on top of existing clip, false if standalone
-Defaults: action=find_best_moments, count=1, aspectRatio=original, subtitles=false, overlay=true"""},
+- "crop": user only wants aspect ratio change, no AI
+- "add_subtitles": user wants captions or subtitles
+- "transcribe": user wants to see transcript text only
+- "animate": user wants motion graphics, intro, outro, title card, any animation
+
+Field rules:
+- "subtitles": true ONLY if user explicitly asks for subtitles/captions
+- "overlay": true if animation goes on existing clip, false if standalone
+- "position": 0 = start/intro, -1 = end/outro, any other number = timestamp in seconds
+- "aspectRatio": only include if user specifies a ratio
+- "count": only for find_best_moments, default 1
+
+Multi-step rules:
+- If user asks for multiple things, return multiple steps in logical order
+- find_best_moments or crop always comes before add_subtitles or animate
+- crop and transcribe are always standalone (single step)
+- Example: "find best moment, make it 9:16, add outro" → [{find_best_moments, aspectRatio:9/16}, {animate, position:-1}]
+- Example: "find 3 clips with subtitles" → [{find_best_moments, count:3, subtitles:true}]
+- Example: "add an intro animation" → [{animate, position:0}]
+
+Defaults per step: count=1, aspectRatio=original, subtitles=false, overlay=true, position=0"""},
             {"role": "user", "content": req.message}
         ],
         response_format={"type": "json_object"}
@@ -406,7 +443,7 @@ Output ONLY the component code. No markdown. No explanation."""
 
 
 @app.post("/animate")
-async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", overlay: bool = True, duration: int = 90, fps: int = 30, width: int = 1080, height: int = 1920):
+async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", overlay: bool = True, position: float = 0, duration: int = 90, fps: int = 30, width: int = 1080, height: int = 1920):
     os.makedirs("temp/clips_out", exist_ok=True)
     out_anim = os.path.abspath(f"temp/clips_out/{job_id}_anim.mp4")
 
@@ -473,6 +510,9 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", overla
             if os.path.exists(candidate):
                 clip_path = candidate
 
+        if not clip_path:
+            raise HTTPException(status_code=404, detail="Clip not found — process your video first before adding an animation.")
+
         if clip_path:
             composited = os.path.abspath(f"temp/clips_out/{job_id}_animated.mp4")
             ffmpeg_bin, _ = _resolve_ffmpeg_bin()
@@ -502,17 +542,7 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", overla
                 "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
                 "-shortest", "-c:v", "copy", "-c:a", "aac", anim_audio
             ], check=True)
-            concat_txt = os.path.abspath(f"temp/{job_id}_anim_concat.txt")
-            with open(concat_txt, "w") as f:
-                f.write(f"file '{anim_audio}'\nfile '{clip_path}'\n")
-            subprocess.run([
-                ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
-                "-f", "concat", "-safe", "0", "-i", concat_txt,
-                "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", composited
-            ], check=True)
-            # Carry existing subtitles forward, offset by actual animation duration
-            existing_subs = []
-            existing_words = os.path.abspath(f"temp/{srt_key or job_id}_words.json")
+            # Probe actual animation duration
             anim_probe = subprocess.run(
                 ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", out_anim],
                 capture_output=True, text=True
@@ -520,16 +550,49 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", overla
             anim_probe_data = json.loads(anim_probe.stdout)
             anim_video_stream = next((s for s in anim_probe_data["streams"] if s["codec_type"] == "video"), None)
             anim_duration = float(anim_video_stream.get("duration", duration / fps)) if anim_video_stream else duration / fps
+
+            concat_txt = os.path.abspath(f"temp/{job_id}_anim_concat.txt")
+            if position > 0:
+                # Split clip at timestamp and insert animation between parts
+                part1 = os.path.abspath(f"temp/{job_id}_part1.mp4")
+                part2 = os.path.abspath(f"temp/{job_id}_part2.mp4")
+                subprocess.run([ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", clip_path, "-t", str(position),
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", part1], check=True)
+                subprocess.run([ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", clip_path, "-ss", str(position),
+                    "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", part2], check=True)
+                with open(concat_txt, "w") as f:
+                    f.write(f"file '{part1}'\nfile '{anim_audio}'\nfile '{part2}'\n")
+            elif position < 0:
+                # Outro: clip then animation
+                with open(concat_txt, "w") as f:
+                    f.write(f"file '{clip_path}'\nfile '{anim_audio}'\n")
+            else:
+                # Intro: animation then clip
+                with open(concat_txt, "w") as f:
+                    f.write(f"file '{anim_audio}'\nfile '{clip_path}'\n")
+
+            subprocess.run([
+                ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "concat", "-safe", "0", "-i", concat_txt,
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", composited
+            ], check=True)
+
+            # Offset subtitles that fall after the animation insertion point
+            existing_subs = []
+            existing_words = os.path.abspath(f"temp/{srt_key or job_id}_words.json")
             if os.path.exists(existing_words):
                 raw_subs = json.load(open(existing_words))
+                insert_at = position if position >= 0 else float("inf")
                 for sub in raw_subs:
-                    shifted = {
-                        "start": sub["start"] + anim_duration,
-                        "end": sub["end"] + anim_duration,
+                    offset = anim_duration if sub["start"] >= insert_at else 0
+                    existing_subs.append({
+                        "start": sub["start"] + offset,
+                        "end": sub["end"] + offset,
                         "text": sub["text"],
-                        "words": [{"word": w["word"], "start": w["start"] + anim_duration, "end": w["end"] + anim_duration} for w in sub.get("words", [])]
-                    }
-                    existing_subs.append(shifted)
+                        "words": [{"word": w["word"], "start": w["start"] + offset, "end": w["end"] + offset} for w in sub.get("words", [])]
+                    })
             return Response(content=json.dumps({
                 "mode": "single", "video_url": f"/clips/{job_id}_animated.mp4", "subtitles": existing_subs, "srt_key": srt_key or job_id
             }), media_type="application/json")
@@ -595,4 +658,12 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
         burn_with_style(source, srt_path, out_path, style, words_path=words_path)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+    key = (srt_key.split("_")[0] if (srt_key and "_" in srt_key) else (srt_key or job_id))
+    for pattern in [f"temp/{key}*", f"temp/clips_out/{key}*"]:
+        for f in glob.glob(pattern):
+            if f != out_path:
+                try: os.remove(f)
+                except: pass
+
     return FileResponse(out_path, media_type="video/mp4", filename="clip_exported.mp4")

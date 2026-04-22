@@ -1,63 +1,101 @@
 import React from 'react';
-import {useCurrentFrame, useVideoConfig, interpolate, spring, AbsoluteFill, Sequence} from 'remotion';
+import { useCurrentFrame, useVideoConfig, interpolate, spring, AbsoluteFill, Sequence } from 'remotion';
 
-const Animation: React.FC = () => {
+export default function Animation() {
 	const frame = useCurrentFrame();
-	const {fps} = useVideoConfig();
+	const { fps } = useVideoConfig();
 
-	const springConfig = {
-		fps,
-		frame,
-		config: {
-			mass: 1,
-			tension: 100,
-			friction: 10,
-		},
-	};
+	const bounce = (delay: number) =>
+		spring({
+			fps,
+			frame: frame - delay,
+			config: {
+				damping: 10,
+			},
+		});
 
-	const titleSpring = spring(springConfig);
-	const subtitleSpring = spring({...springConfig, frame: frame - 15});
+	const slideUp = (delay: number) =>
+		interpolate(frame - delay, [0, 30], [300, 0], {
+			extrapolateLeft: 'clamp',
+			extrapolateRight: 'clamp',
+		});
 
-	const titleOpacity = interpolate(frame, [0, 30], [0, 1]);
-	const subtitleOpacity = interpolate(frame, [15, 45], [0, 1]);
+	const slideInFromLeft = (delay: number) =>
+		interpolate(frame - delay, [0, 15], [-500, 0], {
+			extrapolateLeft: 'clamp',
+			extrapolateRight: 'clamp',
+		});
 
-	const backgroundScale = interpolate(frame, [0, 30], [0.8, 1.2]);
+	const glow = (delay: number) =>
+		interpolate(frame - delay, [0, 15], [0, 1], {
+			extrapolateLeft: 'clamp',
+			extrapolateRight: 'clamp',
+		});
+
+	const scale = (delay: number) =>
+		interpolate(frame - delay, [0, 15], [3, 1], {
+			extrapolateLeft: 'clamp',
+			extrapolateRight: 'clamp',
+		});
+
+	const opacity = (delay: number) =>
+		interpolate(frame - delay, [0, 15], [0, 1], {
+			extrapolateLeft: 'clamp',
+			extrapolateRight: 'clamp',
+		});
 
 	return (
-		<AbsoluteFill style={{backgroundColor: '#000', overflow: 'hidden'}}>
-			<AbsoluteFill style={{
-				background: 'linear-gradient(45deg, #FE6B8B 30%, #FF8E53 90%)',
-				opacity: 0.8,
-				transform: `scale(${backgroundScale})`,
-				borderRadius: '50%',
-			}} />
-			<Sequence from={0} durationInFrames={90}>
-				<AbsoluteFill style={{justifyContent: 'center', alignItems: 'center'}}>
-					<div style={{
-						fontFamily: 'Arial, sans-serif',
-						fontSize: '150px',
+		<AbsoluteFill style={{ backgroundColor: 'black' }}>
+			<Sequence from={0}>
+				<div
+					style={{
+						transform: `translateY(${slideInFromLeft(0)}px) scale(${scale(0)})`,
+						opacity: opacity(0),
+						fontSize: 200,
 						fontWeight: 900,
 						color: 'white',
-						opacity: titleOpacity,
-						transform: `translateY(${interpolate(titleSpring, [0, 1], [200, 0])}px)`,
-					}}>
-						ISSC Podcast
-					</div>
-					<div style={{
-						fontFamily: 'Arial, sans-serif',
-						fontSize: '80px',
+						textShadow: `0 0 10px rgba(255, 255, 255, ${glow(0)})`,
+						width: '100%',
+						textAlign: 'center',
+						marginTop: '50%',
+					}}
+				>
+					HELLO
+				</div>
+			</Sequence>
+
+			<Sequence from={15}>
+				<div
+					style={{
+						transform: `translateY(${slideUp(15)}px)`,
+						opacity: opacity(15),
+						fontSize: 80,
 						fontWeight: 900,
+						backgroundColor: 'red',
 						color: 'white',
-						opacity: subtitleOpacity,
-						marginTop: '20px',
-						transform: `translateY(${interpolate(subtitleSpring, [0, 1], [200, 0])}px)`,
-					}}>
-						Subtle Animation
-					</div>
-				</AbsoluteFill>
+						width: 'auto',
+						padding: '20px 40px',
+						margin: 'auto',
+						marginTop: '70%',
+						borderRadius: 20,
+					}}
+				>
+					SUBSCRIBE
+				</div>
+			</Sequence>
+
+			<Sequence from={30}>
+				<div
+					style={{
+						position: 'absolute',
+						width: '100%',
+						height: '100%',
+						background: 'radial-gradient(circle, rgba(255, 0, 150, 0.5) 0%, rgba(0, 0, 0, 0) 70%)',
+						transform: `scale(${bounce(30)})`,
+						opacity: 0.6,
+					}}
+				/>
 			</Sequence>
 		</AbsoluteFill>
 	);
-};
-
-export default Animation;
+}

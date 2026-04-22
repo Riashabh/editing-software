@@ -33,8 +33,10 @@ function formatTime(s: number) {
 const CHIPS = [
   { label: "Best Moment", text: "find the best moment and make a clip" },
   { label: "3 Clips", text: "find the 3 best moments" },
-  { label: "Transcribe", text: "just transcribe this video" },
+  { label: "Add Subtitles", text: "add subtitles" },
   { label: "Make 9:16", text: "make it 9:16 vertical" },
+  { label: "Hype Intro", text: "find the best moment and add a hype intro animation" },
+  { label: "Outro", text: "find the best moment and add a thank you for watching outro" },
 ];
 
 export default function Home() {
@@ -77,6 +79,75 @@ export default function Home() {
 
   const addMessage = (msg: Message) => setMessages(prev => [...prev, msg]);
 
+  type Step = { action: string; count?: number; aspectRatio?: string; subtitles?: boolean; overlay?: boolean; position?: number };
+
+  const stepMessage = (step: Step) => {
+    if (step.action === "find_best_moments") return step.count && step.count > 1 ? `Finding ${step.count} best moments...` : "Finding the best moment...";
+    if (step.action === "crop") return "Cropping your video...";
+    if (step.action === "add_subtitles") return "Adding subtitles...";
+    if (step.action === "transcribe") return "Transcribing your video...";
+    if (step.action === "animate") return "Generating animation with GPT-4o + Remotion...";
+    return "Processing...";
+  };
+
+  const executeStep = async (step: Step, job_id: string, text: string, file: File, prevResult: ProcessResult | null): Promise<ProcessResult | null> => {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    if (step.action === "crop") {
+      const res = await fetch(`http://localhost:8000/crop?job_id=${job_id}&aspectRatio=${step.aspectRatio ?? "9/16"}`, { method: "POST", body: formData });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+      return res.json();
+    }
+
+    if (step.action === "transcribe") {
+      const res = await fetch(`http://localhost:8000/process?mode=transcribe&job_id=${job_id}`, { method: "POST", body: formData });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+      const data = await res.json();
+      const preview = data.transcript.length > 300 ? data.transcript.slice(0, 300) + "…" : data.transcript;
+      addMessage({ role: "assistant", text: preview });
+      return null;
+    }
+
+    if (step.action === "add_subtitles") {
+      const activeClipResult = prevResult?.mode === "multi" ? prevResult.clips?.[selectedClip] : prevResult;
+      const existingSrtKey = activeClipResult && "srt_key" in activeClipResult ? (activeClipResult as ClipResult).srt_key : undefined;
+      if (existingSrtKey || job_id) {
+        const params = existingSrtKey ? `srt_key=${existingSrtKey}` : `job_id=${job_id}`;
+        const res = await fetch(`http://localhost:8000/add-subtitles?${params}`, { method: "POST" });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+        return res.json();
+      } else {
+        const res = await fetch(`http://localhost:8000/process?mode=add_subtitles&job_id=${job_id}&aspectRatio=${step.aspectRatio ?? "original"}`, { method: "POST", body: formData });
+        if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+        return res.json();
+      }
+    }
+
+    if (step.action === "animate") {
+      const srtKey = prevResult?.srt_key ?? (activeClip && "srt_key" in activeClip ? (activeClip as ClipResult).srt_key : undefined);
+      const params = new URLSearchParams({
+        prompt: text,
+        job_id,
+        overlay: String(step.overlay ?? true),
+        position: String(step.position ?? 0),
+        ...(srtKey ? { srt_key: srtKey } : {}),
+      });
+      const res = await fetch(`http://localhost:8000/animate?${params}`, { method: "POST" });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+      return res.json();
+    }
+
+    // find_best_moments
+    const mode = (step.count ?? 1) > 1 ? "multi" : "single";
+    const res = await fetch(
+      `http://localhost:8000/process?mode=${mode}&job_id=${job_id}&count=${step.count ?? 1}&aspectRatio=${step.aspectRatio ?? "original"}&subtitles=${step.subtitles ?? false}`,
+      { method: "POST", body: formData }
+    );
+    if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
+    return res.json();
+  };
+
   const handleSend = async () => {
     const text = chatInput.trim();
     if (!text && !chatFile) return;
@@ -89,9 +160,7 @@ export default function Home() {
       return;
     }
 
-    // Persist the video for follow-up messages
     if (chatFile) setUploadedFile(chatFile);
-
     addMessage({ role: "user", text: text || "Process this video", fileName: chatFile?.name });
     setChatInput("");
     setChatFile(null);
@@ -99,114 +168,47 @@ export default function Home() {
 
     try {
       addMessage({ role: "assistant", text: "Got it, figuring out what you want..." });
-      let intent: { action: string; count: number; aspectRatio: string; subtitles: boolean; overlay: boolean } = { action: "find_best_moments", count: 1, aspectRatio: "original", subtitles: false, overlay: true };
+
+      let steps: Step[] = [{ action: "find_best_moments", count: 1, aspectRatio: "original", subtitles: false }];
       if (text) {
         const intentRes = await fetch("http://localhost:8000/parse-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: text }),
         });
-        if (intentRes.ok) intent = await intentRes.json();
+        if (intentRes.ok) {
+          const parsed = await intentRes.json();
+          if (parsed.steps?.length) steps = parsed.steps;
+        }
       }
 
-      // animate/add_subtitles work on the existing clip — reuse current jobId
-      const needsNewJob = !["animate", "add_subtitles"].includes(intent.action);
+      // Generate new job_id unless all steps reuse existing clip
+      const needsNewJob = steps.some(s => !["animate", "add_subtitles"].includes(s.action));
       const job_id = needsNewJob ? Math.random().toString(36).slice(2, 10) : jobId;
       if (needsNewJob) setJobId(job_id);
-      const formData = new FormData();
-      formData.append("file", file);
 
-      // — Crop only —
-      if (intent.action === "crop") {
-        addMessage({ role: "assistant", text: "Cropping your video..." });
-        const res = await fetch(
-          `http://localhost:8000/crop?job_id=${job_id}&aspectRatio=${intent.aspectRatio}`,
-          { method: "POST", body: formData }
-        );
-        if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Error: ${e.detail}` }); return; }
-        const data: ProcessResult = await res.json();
-        setStyle(s => ({ ...s, aspectRatio: intent.aspectRatio }));
-        addMessage({ role: "assistant", text: "Done! Opening in the editor." });
-        setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
-        return;
-      }
+      let currentResult: ProcessResult | null = result;
+      let finalResult: ProcessResult | null = null;
 
-      // — Transcribe only —
-      if (intent.action === "transcribe") {
-        addMessage({ role: "assistant", text: "Transcribing your video..." });
-        const res = await fetch(
-          `http://localhost:8000/process?mode=transcribe&job_id=${job_id}`,
-          { method: "POST", body: formData }
-        );
-        if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Error: ${e.detail}` }); return; }
-        const data = await res.json();
-        addMessage({ role: "assistant", text: data.transcript });
-        return;
-      }
-
-      // — Add subtitles —
-      if (intent.action === "add_subtitles") {
-        addMessage({ role: "assistant", text: "Transcribing and adding subtitles to your clip..." });
-        // If we already have a clip, add subtitles to it directly (no re-upload)
-        const activeClipResult = result?.mode === "multi" ? result.clips?.[selectedClip] : result;
-        const existingSrtKey = activeClipResult && "srt_key" in activeClipResult ? (activeClipResult as ClipResult).srt_key : undefined;
-        const params = existingSrtKey
-          ? `srt_key=${existingSrtKey}`
-          : jobId ? `job_id=${jobId}` : null;
-
-        if (params) {
-          const res = await fetch(`http://localhost:8000/add-subtitles?${params}`, { method: "POST" });
-          if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Error: ${e.detail}` }); return; }
-          const data: ProcessResult = await res.json();
-          addMessage({ role: "assistant", text: "Done! Subtitles added." });
-          setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
-        } else {
-          // No existing clip — process full video with subtitles
-          const res = await fetch(
-            `http://localhost:8000/process?mode=add_subtitles&job_id=${job_id}&aspectRatio=${intent.aspectRatio}`,
-            { method: "POST", body: formData }
-          );
-          if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Error: ${e.detail}` }); return; }
-          const data: ProcessResult = await res.json();
-          addMessage({ role: "assistant", text: "Done! Opening in the editor." });
-          setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
+      for (const step of steps) {
+        addMessage({ role: "assistant", text: stepMessage(step) });
+        const stepResult = await executeStep(step, job_id, text, file, currentResult);
+        if (stepResult) {
+          currentResult = stepResult;
+          finalResult = stepResult;
+          if (step.action === "crop" && step.aspectRatio) setStyle(s => ({ ...s, aspectRatio: step.aspectRatio! }));
         }
-        return;
+        if (step.action === "transcribe") { setProcessing(false); return; }
       }
 
-      // — Animate —
-      if (intent.action === "animate") {
-        addMessage({ role: "assistant", text: "Generating animation with GPT-4o + Remotion..." });
-        const animSrtKey = result?.srt_key ?? (activeClip && "srt_key" in activeClip ? (activeClip as ClipResult).srt_key : undefined);
-        const params = new URLSearchParams({
-          prompt: text,
-          job_id: job_id,
-          overlay: String(intent.overlay),
-          ...(animSrtKey ? { srt_key: animSrtKey } : {}),
-        });
-        const res = await fetch(`http://localhost:8000/animate?${params}`, { method: "POST" });
-        if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Error: ${e.detail}` }); return; }
-        const data: ProcessResult = await res.json();
+      if (finalResult) {
         addMessage({ role: "assistant", text: "Done! Opening in the editor." });
-        setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
-        return;
+        setTimeout(() => { setResult(finalResult!); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
       }
 
-      // — Find best moments (default) —
-      const mode = intent.count > 1 ? "multi" : "single";
-      addMessage({ role: "assistant", text: "Transcribing your video with Whisper..." });
-      const res = await fetch(
-        `http://localhost:8000/process?mode=${mode}&job_id=${job_id}&count=${intent.count}&aspectRatio=${intent.aspectRatio}&subtitles=${intent.subtitles}`,
-        { method: "POST", body: formData }
-      );
-      if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Something went wrong: ${e.detail}` }); return; }
-      const data: ProcessResult = await res.json();
-      if (intent.aspectRatio && intent.aspectRatio !== "original") setStyle(s => ({ ...s, aspectRatio: intent.aspectRatio }));
-      addMessage({ role: "assistant", text: "Done! Opening your clip in the editor." });
-      setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
-
-    } catch {
-      addMessage({ role: "assistant", text: "Something went wrong. Please try again." });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Something went wrong.";
+      addMessage({ role: "assistant", text: `Error: ${msg}` });
     } finally {
       setProcessing(false);
     }
