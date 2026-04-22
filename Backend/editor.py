@@ -18,6 +18,7 @@ def cut_and_merge(video_path, moments, output_path="output.mp4"):
             "-t", str(duration),
             "-c:v", "libx264", "-preset", "ultrafast",
             "-c:a", "aac",
+            "-avoid_negative_ts", "make_zero",
             clip_path,
             "-y"
         ]

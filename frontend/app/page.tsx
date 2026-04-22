@@ -16,10 +16,11 @@ interface ClipResult {
 }
 
 interface ProcessResult {
-  mode: "single" | "multi";
+  mode: "single" | "multi" | "transcribe";
   video_url?: string;
   subtitles?: Subtitle[];
   job_id?: string;
+  srt_key?: string;
   clips?: ClipResult[];
 }
 
@@ -98,7 +99,7 @@ export default function Home() {
 
     try {
       addMessage({ role: "assistant", text: "Got it, figuring out what you want..." });
-      let intent: { action: string; count: number; aspectRatio: string; subtitles: boolean } = { action: "find_best_moments", count: 1, aspectRatio: "original", subtitles: false };
+      let intent: { action: string; count: number; aspectRatio: string; subtitles: boolean; overlay: boolean } = { action: "find_best_moments", count: 1, aspectRatio: "original", subtitles: false, overlay: true };
       if (text) {
         const intentRes = await fetch("http://localhost:8000/parse-intent", {
           method: "POST",
@@ -108,8 +109,10 @@ export default function Home() {
         if (intentRes.ok) intent = await intentRes.json();
       }
 
-      const job_id = Math.random().toString(36).slice(2, 10);
-      setJobId(job_id);
+      // animate/add_subtitles work on the existing clip — reuse current jobId
+      const needsNewJob = !["animate", "add_subtitles"].includes(intent.action);
+      const job_id = needsNewJob ? Math.random().toString(36).slice(2, 10) : jobId;
+      if (needsNewJob) setJobId(job_id);
       const formData = new FormData();
       formData.append("file", file);
 
@@ -168,6 +171,24 @@ export default function Home() {
           addMessage({ role: "assistant", text: "Done! Opening in the editor." });
           setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
         }
+        return;
+      }
+
+      // — Animate —
+      if (intent.action === "animate") {
+        addMessage({ role: "assistant", text: "Generating animation with GPT-4o + Remotion..." });
+        const animSrtKey = result?.srt_key ?? (activeClip && "srt_key" in activeClip ? (activeClip as ClipResult).srt_key : undefined);
+        const params = new URLSearchParams({
+          prompt: text,
+          job_id: job_id,
+          overlay: String(intent.overlay),
+          ...(animSrtKey ? { srt_key: animSrtKey } : {}),
+        });
+        const res = await fetch(`http://localhost:8000/animate?${params}`, { method: "POST" });
+        if (!res.ok) { const e = await res.json(); addMessage({ role: "assistant", text: `Error: ${e.detail}` }); return; }
+        const data: ProcessResult = await res.json();
+        addMessage({ role: "assistant", text: "Done! Opening in the editor." });
+        setTimeout(() => { setResult(data); setEditedSubtitles(null); setSelectedClip(0); setView("editor"); }, 800);
         return;
       }
 
