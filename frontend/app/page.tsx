@@ -59,6 +59,7 @@ export default function Home() {
 
   // Editor state
   const [result, setResult] = useState<ProcessResult | null>(null);
+  const [preAnimationResult, setPreAnimationResult] = useState<ProcessResult | null>(null);
   const [selectedClip, setSelectedClip] = useState(0);
   const [style, setStyle] = useState<SubStyle>(DEFAULT_STYLE);
   const [exporting, setExporting] = useState(false);
@@ -66,6 +67,7 @@ export default function Home() {
   const [editedSubtitles, setEditedSubtitles] = useState<Subtitle[] | null>(null);
   const [selectedSub, setSelectedSub] = useState<number | null>(null);
   const [timelineHeight, setTimelineHeight] = useState(88);
+  const [chatPanelWidth, setChatPanelWidth] = useState(288);
   const [zoomPct, setZoomPct] = useState(20);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
@@ -87,6 +89,7 @@ export default function Home() {
     if (step.action === "add_subtitles") return "Adding subtitles...";
     if (step.action === "transcribe") return "Transcribing your video...";
     if (step.action === "animate") return "Generating animation with GPT-4o + Remotion...";
+    if (step.action === "revert") return "Reverting...";
     return "Processing...";
   };
 
@@ -148,6 +151,19 @@ export default function Home() {
     return res.json();
   };
 
+  const handleStartFresh = () => {
+    setMessages([{ role: "assistant", text: "Hey! Drop a video and tell me what you want to do with it." }]);
+    setResult(null);
+    setJobId("");
+    setUploadedFile(null);
+    setChatFile(null);
+    setChatInput("");
+    setEditedSubtitles(null);
+    setSelectedClip(0);
+    setSelectedSub(null);
+    setView("chat");
+  };
+
   const handleSend = async () => {
     const text = chatInput.trim();
     if (!text && !chatFile) return;
@@ -171,10 +187,17 @@ export default function Home() {
 
       let steps: Step[] = [{ action: "find_best_moments", count: 1, aspectRatio: "original", subtitles: false }];
       if (text) {
+        const intentContext = result ? {
+          hasActiveClip: true,
+          hasSubtitles: displaySubtitles.length > 0,
+          subtitleCount: displaySubtitles.length,
+          clipMode: result.mode,
+          clipCount: result.clips?.length,
+        } : {};
         const intentRes = await fetch("http://localhost:8000/parse-intent", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text }),
+          body: JSON.stringify({ message: text, context: intentContext }),
         });
         if (intentRes.ok) {
           const parsed = await intentRes.json();
@@ -182,8 +205,11 @@ export default function Home() {
         }
       }
 
-      // Generate new job_id unless all steps reuse existing clip
-      const needsNewJob = steps.some(s => !["animate", "add_subtitles"].includes(s.action));
+      // In editor with active clip: don't generate new job_id for clip-level ops
+      const clipOps = ["animate", "add_subtitles", "crop"];
+      const needsNewJob = result
+        ? steps.some(s => s.action === "find_best_moments")
+        : steps.some(s => !clipOps.includes(s.action));
       const job_id = needsNewJob ? Math.random().toString(36).slice(2, 10) : jobId;
       if (needsNewJob) setJobId(job_id);
 
@@ -191,6 +217,19 @@ export default function Home() {
       let finalResult: ProcessResult | null = null;
 
       for (const step of steps) {
+        if (step.action === "revert") {
+          const reverted = preAnimationResult ?? currentResult;
+          if (reverted) {
+            finalResult = reverted;
+            currentResult = reverted;
+            setPreAnimationResult(null);
+            addMessage({ role: "assistant", text: "Removed the animation — back to the original clip." });
+          } else {
+            addMessage({ role: "assistant", text: "Nothing to revert." });
+          }
+          continue;
+        }
+        if (step.action === "animate") setPreAnimationResult(currentResult);
         addMessage({ role: "assistant", text: stepMessage(step) });
         const stepResult = await executeStep(step, job_id, text, file, currentResult);
         if (stepResult) {
@@ -312,6 +351,20 @@ export default function Home() {
       window.removeEventListener("mousemove", onMove);
     };
   }, [view]);
+
+  const onChatPanelDrag = (e: React.MouseEvent) => {
+    const startX = e.clientX;
+    const startW = chatPanelWidth;
+    const onMove = (ev: MouseEvent) => {
+      setChatPanelWidth(Math.max(200, Math.min(480, startW + (ev.clientX - startX))));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   const onTimelineDrag = (e: React.MouseEvent) => {
     const startY = e.clientY;
@@ -525,9 +578,76 @@ export default function Home() {
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Main row: video + sidebar */}
           <div className="flex-1 flex overflow-hidden">
-            {/* Left — video stage */}
+            {/* Left — chat panel */}
+            <div className="bg-white border-r border-black/8 flex flex-col overflow-hidden relative flex-shrink-0" style={{ width: chatPanelWidth }}>
+              <div onMouseDown={onChatPanelDrag} className="absolute right-0 top-0 bottom-0 w-1 cursor-col-resize z-10 hover:bg-black/10 transition-colors" />
+              <div className="flex-shrink-0 flex items-center justify-between px-3 py-2 border-b border-black/8">
+                <span className="text-[10px] font-medium text-black/40 uppercase tracking-wide">Chat</span>
+                <button onClick={handleStartFresh} className="text-[10px] text-black/30 hover:text-black transition-colors">+ New session</button>
+              </div>
+              <div className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-2">
+                {messages.map((msg, i) => (
+                  <div key={i} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs leading-relaxed ${msg.role === "user" ? "bg-black text-white rounded-br-sm" : "bg-black/[0.06] text-black rounded-bl-sm"}`}>
+                      {msg.fileName && <p className="text-[10px] opacity-50 mb-1 font-mono">📎 {msg.fileName}</p>}
+                      {msg.text}
+                    </div>
+                  </div>
+                ))}
+                {processing && (
+                  <div className="flex justify-start">
+                    <div className="bg-black/[0.06] rounded-2xl rounded-bl-sm px-3 py-2 flex gap-1 items-center">
+                      <div className="w-1.5 h-1.5 bg-black/30 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+                      <div className="w-1.5 h-1.5 bg-black/30 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+                      <div className="w-1.5 h-1.5 bg-black/30 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+                    </div>
+                  </div>
+                )}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Chips */}
+              <div className="px-3 pt-2 flex gap-1.5 flex-wrap">
+                {CHIPS.map(chip => (
+                  <button
+                    key={chip.label}
+                    onClick={() => setChatInput(prev => prev ? `${prev} ${chip.text}` : chip.text)}
+                    className="text-[10px] px-2.5 py-1 rounded-full bg-black/[0.05] hover:bg-black/[0.10] text-black/50 hover:text-black border border-black/8 transition-all whitespace-nowrap"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input */}
+              <div className="p-3 border-t border-black/8 mt-2">
+                {chatFile && (
+                  <div className="flex items-center gap-2 mb-2 bg-black/[0.04] rounded-lg px-3 py-1.5">
+                    <span className="text-[10px] text-black/50 font-mono truncate flex-1">📎 {chatFile.name}</span>
+                    <button onClick={() => setChatFile(null)} className="text-black/30 hover:text-black text-xs">✕</button>
+                  </div>
+                )}
+                <div className="flex items-center gap-2 bg-black/[0.03] rounded-xl px-3 py-2 border border-black/8">
+                  <button onClick={() => fileInputRef.current?.click()} className="text-black/30 hover:text-black transition-colors text-base flex-shrink-0" title="Attach video">⊕</button>
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={e => setChatInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                    placeholder="Edit video..."
+                    className="flex-1 bg-transparent text-xs text-black outline-none placeholder:text-black/25 min-w-0"
+                  />
+                  <button
+                    onClick={handleSend}
+                    disabled={processing || (!chatInput.trim() && !chatFile)}
+                    className="flex-shrink-0 w-7 h-7 rounded-lg bg-black flex items-center justify-center text-white text-xs font-bold transition-all hover:bg-neutral-800 disabled:bg-black/10 disabled:cursor-not-allowed"
+                  >↑</button>
+                </div>
+              </div>
+            </div>
+
+            {/* Center — video stage */}
             <div className="flex-1 bg-neutral-50 flex flex-col items-center justify-center p-8 relative overflow-auto" style={{ backgroundImage: "radial-gradient(circle, #b0b0b0 1px, transparent 1px)", backgroundSize: "24px 24px" }}>
-              {/* Clip tabs */}
               {result.mode === "multi" && (
                 <div className="flex gap-2 p-1 bg-black/[0.04] rounded-xl mb-6">
                   {result.clips?.map((_, i) => (
@@ -538,8 +658,6 @@ export default function Home() {
                   ))}
                 </div>
               )}
-
-              {/* Video */}
               <div
                 className="w-full"
                 style={{
