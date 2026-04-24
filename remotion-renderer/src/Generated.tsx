@@ -1,58 +1,59 @@
 import React from 'react';
-import {useCurrentFrame, useVideoConfig, interpolate, spring, AbsoluteFill, Sequence} from 'remotion';
+import { useCurrentFrame, useVideoConfig, interpolate, spring, AbsoluteFill, Sequence } from 'remotion';
 
-export default function Animation() {
-	const frame = useCurrentFrame();
-	const {fps, width, height} = useVideoConfig();
+const Animation: React.FC = () => {
+  const frame = useCurrentFrame();
+  const { fps, width, height } = useVideoConfig();
 
-	const scale = spring({
-		frame,
-		fps,
-		from: 0,
-		to: 1,
-		config: {damping: 10},
-	});
+  const springConfig = {
+    fps,
+    damping: 10,
+    mass: 1,
+    stiffness: 100,
+  };
 
-	const translateY = interpolate(frame, [0, 60], [height, 0], {extrapolateRight: 'clamp'});
-	const opacity = interpolate(frame, [45, 90], [0, 1], {extrapolateRight: 'clamp'});
+  const textSpring = spring({ frame: frame - 10, ...springConfig });
+  const textTranslateY = interpolate(textSpring, [0, 1], [height, 0]);
 
-	return (
-		<AbsoluteFill style={{backgroundColor: '#282c34', justifyContent: 'center', alignItems: 'center'}}>
-			<Sequence from={0} durationInFrames={60}>
-				<div
-					style={{
-						fontSize: 150,
-						fontWeight: 900,
-						color: '#61dafb',
-						transform: `scale(${scale}) translateY(${translateY}px)`,
-						textAlign: 'center',
-					}}
-				>
-					Thank You
-				</div>
-			</Sequence>
-			<Sequence from={45} durationInFrames={45}>
-				<div
-					style={{
-						fontSize: 80,
-						fontWeight: 900,
-						color: '#ffffff',
-						transform: `translateY(${translateY}px)`,
-						opacity,
-						textAlign: 'center',
-					}}
-				>
-					For Watching!
-				</div>
-			</Sequence>
-			<div style={{
-				position: 'absolute',
-				top: 0,
-				left: 0,
-				height: '100%',
-				width: '100%',
-				background: 'radial-gradient(circle, rgba(0,0,0,0) 60%, rgba(97,218,251,0.5) 100%)',
-			}} />
-		</AbsoluteFill>
-	);
-}
+  const glowOpacity = interpolate(frame, [0, 30, 60, 90], [0, 1, 1, 0]);
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: 'black', justifyContent: 'center', alignItems: 'center' }}>
+      <div style={{
+          position: 'absolute',
+          width: '150%',
+          height: '150%',
+          background: 'radial-gradient(circle, rgba(255,255,255,0.15) 0%, rgba(255,0,0,0) 70%)',
+          filter: 'blur(100px)',
+          opacity: glowOpacity
+        }} 
+      />
+      <Sequence from={0} durationInFrames={90}>
+        <AbsoluteFill style={{ transform: `translateY(${textTranslateY}px)`, justifyContent: 'center', alignItems: 'center' }}>
+          <div style={{
+            fontSize: 160,
+            fontWeight: 900,
+            color: 'white',
+            textAlign: 'center',
+            opacity: interpolate(frame, [60, 90], [1, 0])
+          }}>
+            Thank You!
+          </div>
+        </AbsoluteFill>
+      </Sequence>
+      <AbsoluteFill style={{ justifyContent: 'center', alignItems: 'center' }}>
+        <div style={{
+          position: 'absolute',
+          width: '100%',
+          height: '100%',
+          background: 'radial-gradient(circle, rgba(0,0,255,0.3) 0%, rgba(0,255,255,0) 60%)',
+          transform: `rotate(${frame}deg)`,
+          opacity: 0.4
+        }} 
+        />
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+};
+
+export default Animation;

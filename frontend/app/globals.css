@@ -7,9 +7,63 @@
   font-style: normal;
 }
 
+@font-face {
+  font-family: "Fraunces";
+  src: url("/fonts/Fraunces-VariableFont_SOFT,WONK,opsz,wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+}
+
+@font-face {
+  font-family: "Fraunces";
+  src: url("/fonts/Fraunces-Italic-VariableFont_SOFT,WONK,opsz,wght.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: italic;
+}
+
+@font-face {
+  font-family: "CsGeorgia";
+  src: url("/fonts/CsGeorgiaRegularDemo-V4Y7w.otf") format("opentype");
+  font-weight: normal;
+  font-style: normal;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Fonts */
+  --font-display: "Fraunces", Georgia, serif;
+  --font-italic:  "CsGeorgia", Georgia, serif;
+  --font-mono:    "JetBrains Mono", ui-monospace, monospace;
+
+  /* Colors */
+  --bg:            #0a0b0d;
+  --bg-panel:      rgba(12,13,16,0.5);
+  --bg-elevated:   rgba(14,15,19,0.7);
+  --border:        rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.12);
+  --text:          #ffffff;
+  --text-muted:    rgba(255,255,255,0.55);
+  --text-dim:      rgba(255,255,255,0.4);
+  --text-faint:    rgba(255,255,255,0.25);
+  --accent:        #2450ff;
+  --success:       #6EE7B7;
+
+  /* Aliases (keep old names working) */
+  --ink:        var(--text);
+  --ink-60:     var(--text-muted);
+  --ink-40:     var(--text-dim);
+  --ink-20:     var(--text-faint);
+  --surface-1:  rgba(255,255,255,0.04);
+  --surface-2:  rgba(255,255,255,0.08);
+  --line:       var(--border);
+  --line-strong:var(--border-strong);
+  --canvas:     #111215;
+
+  /* Dot grid */
+  --dot-color: rgba(255,255,255,0.18);
+  --dot-size:  22px;
+
+  --background: #0a0b0d;
+  --foreground: #ffffff;
 }
 
 @theme inline {
@@ -19,15 +73,37 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.dot-grid {
+  background-image: radial-gradient(circle, var(--dot-color) 1px, transparent 1px);
+  background-size: var(--dot-size) var(--dot-size);
+}
+
+.vignette {
+  background: radial-gradient(ellipse at 50% 45%, transparent 35%, rgba(0,0,0,0.55) 100%);
+}
+
+input[type=range] { -webkit-appearance: none; appearance: none; background: transparent; }
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #ffffff; border: none;
+  cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.6);
+}
+input[type=range]::-moz-range-thumb {
+  width: 14px; height: 14px; border-radius: 50%;
+  background: #ffffff; border: none;
+  cursor: pointer;
+}
+input[type=range]::-webkit-slider-runnable-track {
+  height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);
+}
+input[type=range]::-moz-range-track {
+  height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15);
 }

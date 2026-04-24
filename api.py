@@ -185,6 +185,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 # ── models ───────────────────────────────────────────────────────────────────
 
+class ExportSegment(BaseModel):
+    source_url: str   # e.g. /clips/abc_v.mp4
+    timeline_start: float
+    track: str        # "video" or "fx"
+    duration: float
+
 class StyleSettings(BaseModel):
     fontFamily: str = "Arial"
     fontSize: int = 100
@@ -198,6 +204,7 @@ class StyleSettings(BaseModel):
     karaokeColor: str = "#ffe600"
     aspectRatio: str = "original"
     subtitles: list = []
+    segments: list[ExportSegment] = []
 
 class IntentRequest(BaseModel):
     message: str
@@ -245,7 +252,7 @@ Action rules:
 
 Field rules:
 - "subtitles": true ONLY if user explicitly asks for subtitles/captions
-- "overlay": true if animation goes on existing clip, false if standalone
+- "track": "video" for intros/outros/standalone clips that play before/after; "fx" for overlays/title-cards/lower-thirds that sit on top
 - "position": 0 = start/intro, -1 = end/outro, any other number = timestamp in seconds
 - "aspectRatio": only include if user specifies a ratio
 - "count": only for find_best_moments, default 1
@@ -471,26 +478,24 @@ Output ONLY the component code. No markdown. No explanation."""
 
 
 @app.post("/animate")
-async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", overlay: bool = True, position: float = 0, duration: int = 90, fps: int = 30, width: int = 1080, height: int = 1920):
+async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track: str = "video", position: float = 0, duration: int = 90, fps: int = 30, width: int = 1080, height: int = 1920):
     os.makedirs("temp/clips_out", exist_ok=True)
     out_anim = os.path.abspath(f"temp/clips_out/{job_id}_anim.mp4")
     ffmpeg_bin, _ = _resolve_ffmpeg_bin()
 
-    # ── 1. Find clip & probe its actual dimensions first ──────────────────────
+    # ── 1. Find clip & probe dimensions ──────────────────────────────────────
     clip_path = None
-    if overlay and job_id:
-        if srt_key:
-            parts = srt_key.split("_")
-            candidate = (os.path.abspath(f"temp/clips_out/{parts[0]}_v{parts[1]}.mp4") if len(parts) >= 2
-                         else os.path.abspath(f"temp/clips_out/{srt_key}_v.mp4"))
-            if os.path.exists(candidate):
+    if job_id:
+        for candidate in [
+            os.path.abspath(f"temp/clips_out/{srt_key.split('_')[0]}_v{srt_key.split('_')[1]}.mp4") if (srt_key and "_" in srt_key) else None,
+            os.path.abspath(f"temp/clips_out/{srt_key}_v.mp4") if srt_key else None,
+            os.path.abspath(f"temp/clips_out/{job_id}_v.mp4"),
+        ]:
+            if candidate and os.path.exists(candidate):
                 clip_path = candidate
+                break
         if not clip_path:
-            candidate = os.path.abspath(f"temp/clips_out/{job_id}_v.mp4")
-            if os.path.exists(candidate):
-                clip_path = candidate
-        if not clip_path:
-            raise HTTPException(status_code=404, detail="Clip not found — process your video first before adding an animation.")
+            raise HTTPException(status_code=404, detail="Clip not found — process your video first.")
 
         probe = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", clip_path],
@@ -499,7 +504,6 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", overla
         streams = json.loads(probe.stdout)["streams"]
         vs = next(s for s in streams if s["codec_type"] == "video")
         width, height = int(vs["width"]), int(vs["height"])
-        clip_fps = vs.get("r_frame_rate", "30/1")
 
     # ── 2. Load transcript context ────────────────────────────────────────────
     words_path = f"temp/{srt_key or job_id}_words.json" if (srt_key or job_id) else None
@@ -508,7 +512,7 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", overla
         words = json.load(open(words_path))
         transcript_context = f"\n\nTranscript context: {json.dumps(words[:30])}"
 
-    # ── 3. Generate Remotion component with correct canvas size ───────────────
+    # ── 3. Generate Remotion component ───────────────────────────────────────
     try:
         msg = client.chat.completions.create(
             model="gpt-4o",
@@ -546,95 +550,96 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", overla
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=500, detail="Render timed out")
 
-    # ── 5. Composite onto clip ────────────────────────────────────────────────
-    if clip_path:
-        composited = os.path.abspath(f"temp/clips_out/{job_id}_animated.mp4")
+    # ── 5. Add silent audio so browser can play alongside audio clips ─────────
+    out_anim_final = out_anim.replace(".mp4", "_ready.mp4")
+    subprocess.run([
+        ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+        "-i", out_anim,
+        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+        "-shortest", "-c:v", "copy", "-c:a", "aac", out_anim_final
+    ], check=True)
 
-        # Normalize animation to clip resolution/fps, add silent audio
-        anim_norm = out_anim.replace(".mp4", "_norm.mp4")
-        anim_audio = out_anim.replace(".mp4", "_audio.mp4")
-        subprocess.run([
-            ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
-            "-i", out_anim, "-vf", f"scale={width}:{height},setsar=1",
-            "-r", clip_fps, "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-an", anim_norm
-        ], check=True)
-        subprocess.run([
-            ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
-            "-i", anim_norm, "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
-            "-shortest", "-c:v", "copy", "-c:a", "aac", anim_audio
-        ], check=True)
+    # Probe duration
+    ap = subprocess.run(
+        ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", out_anim],
+        capture_output=True, text=True
+    )
+    avs = next((s for s in json.loads(ap.stdout)["streams"] if s["codec_type"] == "video"), None)
+    anim_duration = float(avs.get("duration", duration / fps)) if avs else duration / fps
 
-        # Probe actual rendered animation duration
-        ap = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams", out_anim],
-            capture_output=True, text=True
-        )
-        avs = next((s for s in json.loads(ap.stdout)["streams"] if s["codec_type"] == "video"), None)
-        anim_duration = float(avs.get("duration", duration / fps)) if avs else duration / fps
-
-        concat_txt = os.path.abspath(f"temp/{job_id}_anim_concat.txt")
-        if position > 0:
-            part1 = os.path.abspath(f"temp/{job_id}_part1.mp4")
-            part2 = os.path.abspath(f"temp/{job_id}_part2.mp4")
-            subprocess.run([ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
-                "-i", clip_path, "-t", str(position),
-                "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", part1], check=True)
-            subprocess.run([ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
-                "-i", clip_path, "-ss", str(position),
-                "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", part2], check=True)
-            with open(concat_txt, "w") as f:
-                f.write(f"file '{part1}'\nfile '{anim_audio}'\nfile '{part2}'\n")
-        elif position < 0:
-            with open(concat_txt, "w") as f:
-                f.write(f"file '{clip_path}'\nfile '{anim_audio}'\n")
-        else:
-            with open(concat_txt, "w") as f:
-                f.write(f"file '{anim_audio}'\nfile '{clip_path}'\n")
-
-        subprocess.run([
-            ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
-            "-f", "concat", "-safe", "0", "-i", concat_txt,
-            "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "aac", composited
-        ], check=True)
-
-        existing_subs = []
-        existing_words = os.path.abspath(f"temp/{srt_key or job_id}_words.json")
-        if os.path.exists(existing_words):
-            raw_subs = json.load(open(existing_words))
-            insert_at = position if position >= 0 else float("inf")
-            for sub in raw_subs:
-                offset = anim_duration if sub["start"] >= insert_at else 0
-                existing_subs.append({
-                    "start": sub["start"] + offset,
-                    "end": sub["end"] + offset,
-                    "text": sub["text"],
-                    "words": [{"word": w["word"], "start": w["start"] + offset, "end": w["end"] + offset} for w in sub.get("words", [])]
-                })
-        return Response(content=json.dumps({
-            "mode": "single", "video_url": f"/clips/{job_id}_animated.mp4", "subtitles": existing_subs, "srt_key": srt_key or job_id
-        }), media_type="application/json")
-
-    # Standalone mode
     return Response(content=json.dumps({
-        "mode": "single", "video_url": f"/clips/{job_id}_anim.mp4", "subtitles": [], "srt_key": job_id
+        "mode": "animation",
+        "video_url": f"/clips/{job_id}_anim_ready.mp4",
+        "anim_duration": anim_duration,
+        "track": track,
+        "position": position,
+        "subtitles": [],
+        "srt_key": srt_key or job_id,
     }), media_type="application/json")
 
 
 @app.post("/export")
 async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""):
-    if srt_key and "_" in srt_key:
-        parts = srt_key.split("_")
-        video_path = os.path.abspath(f"temp/clips_out/{parts[0]}_v{parts[1]}.mp4")
-        srt_path = os.path.abspath(f"temp/{srt_key}.srt")
-        words_path = os.path.abspath(f"temp/{srt_key}_words.json")
-        out_path = os.path.abspath(f"temp/clips_out/{srt_key}_exported.mp4")
+    ffmpeg_bin, _ = _resolve_ffmpeg_bin()
+    key = srt_key or job_id
+    out_path = os.path.abspath(f"temp/clips_out/{key}_exported.mp4")
+    srt_path = os.path.abspath(f"temp/{key}.srt")
+    words_path = os.path.abspath(f"temp/{key}_words.json")
+
+    if style.segments:
+        # NLE export — concat video segments in timeline order, then overlay FX
+        video_segs = sorted([s for s in style.segments if s.track == "video"], key=lambda s: s.timeline_start)
+        fx_segs = [s for s in style.segments if s.track == "fx"]
+
+        if not video_segs:
+            raise HTTPException(status_code=400, detail="No video segments to export.")
+
+        def seg_path(s: ExportSegment) -> str:
+            return os.path.abspath("temp/clips_out/" + s.source_url.split("/clips/")[-1])
+
+        if len(video_segs) == 1:
+            video_path = seg_path(video_segs[0])
+        else:
+            concat_txt = os.path.abspath(f"temp/{key}_export_concat.txt")
+            with open(concat_txt, "w") as f:
+                for seg in video_segs:
+                    f.write(f"file '{seg_path(seg)}'\n")
+            merged = os.path.abspath(f"temp/clips_out/{key}_merged.mp4")
+            subprocess.run([ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                "-f", "concat", "-safe", "0", "-i", concat_txt,
+                "-c", "copy", merged], check=True)
+            video_path = merged
+
+        # Apply FX overlays (composited on top at their timeline positions)
+        for fx in fx_segs:
+            fx_file = seg_path(fx)
+            if not os.path.exists(fx_file):
+                continue
+            overlay_out = os.path.abspath(f"temp/clips_out/{key}_fx_overlay.mp4")
+            subprocess.run([ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                "-i", video_path,
+                "-i", fx_file,
+                "-filter_complex",
+                f"[0:v][1:v]overlay=0:0:enable='between(t,{fx.timeline_start},{fx.timeline_start + fx.duration})'[v]",
+                "-map", "[v]", "-map", "0:a?",
+                "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "copy",
+                overlay_out], check=True)
+            video_path = overlay_out
     else:
-        key = srt_key or job_id
-        animated = os.path.abspath(f"temp/clips_out/{key}_animated.mp4")
-        video_path = animated if os.path.exists(animated) else os.path.abspath(f"temp/clips_out/{key}_v.mp4")
-        srt_path = os.path.abspath(f"temp/{key}.srt")
-        words_path = os.path.abspath(f"temp/{key}_words.json")
-        out_path = os.path.abspath(f"temp/clips_out/{key}_exported.mp4")
+        # Legacy single-file export
+        if srt_key and "_" in srt_key:
+            parts = srt_key.split("_")
+            video_path = os.path.abspath(f"temp/clips_out/{parts[0]}_v{parts[1]}.mp4")
+            srt_path = os.path.abspath(f"temp/{srt_key}.srt")
+            words_path = os.path.abspath(f"temp/{srt_key}_words.json")
+            out_path = os.path.abspath(f"temp/clips_out/{srt_key}_exported.mp4")
+        else:
+            video_path = os.path.abspath(f"temp/clips_out/{key}_v.mp4")
+            if not os.path.exists(video_path):
+                raise HTTPException(status_code=404, detail="Video not found. Re-process the video.")
+
+    if not os.path.exists(video_path):
+        raise HTTPException(status_code=404, detail="Video not found. Re-process the video.")
 
     if not os.path.exists(video_path):
         raise HTTPException(status_code=404, detail="Video not found. Re-process the video.")
@@ -645,7 +650,7 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
 
     try:
         crop_map = {
-            "9/16": None,   # handled by reframe_to_vertical
+            "9/16": None,
             "16/9": "crop=iw:iw*9/16",
             "1/1":  "crop=min(iw\\,ih):min(iw\\,ih)",
             "4/5":  "crop=ih*4/5:ih",
@@ -664,7 +669,6 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
             source = cropped
         elif style.aspectRatio in crop_map and crop_map[style.aspectRatio]:
             cropped = out_path.replace(".mp4", "_cropped.mp4")
-            ffmpeg_bin, _ = _resolve_ffmpeg_bin()
             subprocess.run(
                 [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
                  "-i", source, "-vf", crop_map[style.aspectRatio],
