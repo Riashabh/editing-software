@@ -10,7 +10,7 @@ from openai import OpenAI
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, UploadFile, File, HTTPException
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -27,6 +27,7 @@ from Backend.subtitles import (
     _resolve_ffmpeg_bin,
     _vf_for_burn,
 )
+from Backend import storage
 
 app = FastAPI()
 app.add_middleware(
@@ -35,6 +36,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+def _clip_url(local_path: str, key: str) -> str:
+    """Upload to R2 if configured, else return local static URL."""
+    if storage.enabled():
+        return storage.upload(local_path, key)
+    return f"/clips/{key}"
 
 
 def _clean_temp():
@@ -369,9 +377,10 @@ async def crop_video(file: UploadFile = File(...), aspectRatio: str = "9/16", jo
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    key = f"{job_id}_cropped.mp4"
     return Response(content=json.dumps({
         "mode": "single",
-        "video_url": f"/clips/{job_id}_cropped.mp4",
+        "video_url": _clip_url(out_path, key),
         "subtitles": [],
         "srt_key": job_id,
         "aspectRatio": aspectRatio,
@@ -405,7 +414,7 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
                 json.dump(sub_json, wf)
             return Response(content=json.dumps({
                 "mode": "single",
-                "video_url": f"/clips/{job_id}_v.mp4",
+                "video_url": _clip_url(out_path, f"{job_id}_v.mp4"),
                 "subtitles": sub_json,
                 "srt_key": job_id,
                 "aspectRatio": aspectRatio,
@@ -417,15 +426,15 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
         if mode == "multi":
             def process_clip(i, moment):
                 merged = cut_and_merge(input_path, [moment], output_path=f"temp/{job_id}_clip{i}.mp4")
-                out_path = f"temp/clips_out/{job_id}_v{i}.mp4"
-                shutil.copy(merged, out_path)
+                clip_out = f"temp/clips_out/{job_id}_v{i}.mp4"
+                shutil.copy(merged, clip_out)
                 sub_json = []
                 if subtitles:
                     _, sub_data = generate_srt(transcript, [moment], output_path=f"temp/{job_id}_{i}.srt")
                     sub_json = subtitles_to_json(sub_data)
                     with open(f"temp/{job_id}_{i}_words.json", "w") as wf:
                         json.dump(sub_json, wf)
-                return i, {"video_url": f"/clips/{job_id}_v{i}.mp4", "subtitles": sub_json, "srt_key": f"{job_id}_{i}"}
+                return i, {"video_url": _clip_url(clip_out, f"{job_id}_v{i}.mp4"), "subtitles": sub_json, "srt_key": f"{job_id}_{i}"}
 
             with ThreadPoolExecutor(max_workers=3) as executor:
                 futures = {executor.submit(process_clip, i, m): i for i, m in enumerate(moments)}
@@ -449,7 +458,7 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
                     json.dump(sub_json, wf)
             return Response(content=json.dumps({
                 "mode": "single",
-                "video_url": f"/clips/{job_id}_v.mp4",
+                "video_url": _clip_url(out_path, f"{job_id}_v.mp4"),
                 "subtitles": sub_json,
                 "srt_key": job_id,
                 "aspectRatio": aspectRatio,
@@ -576,9 +585,10 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track:
     avs = next((s for s in json.loads(ap.stdout)["streams"] if s["codec_type"] == "video"), None)
     anim_duration = float(avs.get("duration", duration / fps)) if avs else duration / fps
 
+    anim_key = f"{job_id}_anim_ready.mp4"
     return Response(content=json.dumps({
         "mode": "animation",
-        "video_url": f"/clips/{job_id}_anim_ready.mp4",
+        "video_url": _clip_url(out_anim_final, anim_key),
         "anim_duration": anim_duration,
         "track": track,
         "position": position,
@@ -604,6 +614,14 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
             raise HTTPException(status_code=400, detail="No video segments to export.")
 
         def seg_path(s: ExportSegment) -> str:
+            if s.source_url.startswith("http"):
+                # R2 URL — extract filename and download locally
+                fname = s.source_url.split("/")[-1]
+                local = os.path.abspath(f"temp/clips_out/{fname}")
+                if not os.path.exists(local):
+                    import urllib.request
+                    urllib.request.urlretrieve(s.source_url, local)
+                return local
             return os.path.abspath("temp/clips_out/" + s.source_url.split("/clips/")[-1])
 
         if len(video_segs) == 1:
@@ -697,4 +715,7 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
                 except: pass
 
 
+    if storage.enabled():
+        url = storage.upload(out_path, f"{key}_exported.mp4")
+        return RedirectResponse(url)
     return FileResponse(out_path, media_type="video/mp4", filename="clip_exported.mp4")

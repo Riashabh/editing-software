@@ -4,6 +4,8 @@ import VideoPlayer from "./components/VideoPlayer";
 import StylePanel, { SubStyle, Subtitle, DEFAULT_STYLE } from "./components/StylePanel";
 import { Ico } from "./components/icons";
 
+const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 interface Message {
   role: "user" | "assistant";
   text: string;
@@ -416,13 +418,13 @@ export default function Home() {
     formData.append("file", file);
 
     if (step.action === "crop") {
-      const res = await fetch(`http://localhost:8000/crop?job_id=${job_id}&aspectRatio=${step.aspectRatio ?? "9/16"}`, { method: "POST", body: formData });
+      const res = await fetch(`${API}/crop?job_id=${job_id}&aspectRatio=${step.aspectRatio ?? "9/16"}`, { method: "POST", body: formData });
       if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
       return res.json();
     }
 
     if (step.action === "transcribe") {
-      const res = await fetch(`http://localhost:8000/process?mode=transcribe&job_id=${job_id}`, { method: "POST", body: formData });
+      const res = await fetch(`${API}/process?mode=transcribe&job_id=${job_id}`, { method: "POST", body: formData });
       if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
       const data = await res.json();
       const preview = data.transcript.length > 300 ? data.transcript.slice(0, 300) + "…" : data.transcript;
@@ -435,11 +437,11 @@ export default function Home() {
       const existingSrtKey = activeClipResult && "srt_key" in activeClipResult ? (activeClipResult as ClipResult).srt_key : undefined;
       if (existingSrtKey || job_id) {
         const params = existingSrtKey ? `srt_key=${existingSrtKey}` : `job_id=${job_id}`;
-        const res = await fetch(`http://localhost:8000/add-subtitles?${params}`, { method: "POST" });
+        const res = await fetch(`${API}/add-subtitles?${params}`, { method: "POST" });
         if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
         return res.json();
       } else {
-        const res = await fetch(`http://localhost:8000/process?mode=add_subtitles&job_id=${job_id}&aspectRatio=${step.aspectRatio ?? "original"}`, { method: "POST", body: formData });
+        const res = await fetch(`${API}/process?mode=add_subtitles&job_id=${job_id}&aspectRatio=${step.aspectRatio ?? "original"}`, { method: "POST", body: formData });
         if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
         return res.json();
       }
@@ -453,14 +455,14 @@ export default function Home() {
         position: String(step.position ?? 0),
         ...(srtKey ? { srt_key: srtKey } : {}),
       });
-      const res = await fetch(`http://localhost:8000/animate?${params}`, { method: "POST" });
+      const res = await fetch(`${API}/animate?${params}`, { method: "POST" });
       if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
       return res.json();
     }
 
     const mode = (step.count ?? 1) > 1 ? "multi" : "single";
     const res = await fetch(
-      `http://localhost:8000/process?mode=${mode}&job_id=${job_id}&count=${step.count ?? 1}&aspectRatio=${step.aspectRatio ?? "original"}&subtitles=${step.subtitles ?? false}`,
+      `${API}/process?mode=${mode}&job_id=${job_id}&count=${step.count ?? 1}&aspectRatio=${step.aspectRatio ?? "original"}&subtitles=${step.subtitles ?? false}`,
       { method: "POST", body: formData }
     );
     if (!res.ok) { const e = await res.json(); throw new Error(e.detail); }
@@ -468,7 +470,7 @@ export default function Home() {
   };
 
   const handleStartFresh = () => {
-    fetch("http://localhost:8000/cleanup", { method: "POST" }).catch(() => {});
+    fetch(`${API}/cleanup`, { method: "POST" }).catch(() => {});
     setMessages([{ role: "assistant", text: "Hey! Drop a video and tell me what you want to do with it." }]);
     setResult(null); setSegments([]); setActiveVideoSegId(null); setSelectedSegmentId(null);
     setJobId(""); setUploadedFile(null); setChatFile(null); setChatInput("");
@@ -502,7 +504,7 @@ export default function Home() {
           clipMode: result.mode,
           clipCount: result.clips?.length,
         } : {};
-        const intentRes = await fetch("http://localhost:8000/parse-intent", {
+        const intentRes = await fetch(`${API}/parse-intent`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ message: text, context: intentContext }),
@@ -550,14 +552,14 @@ export default function Home() {
             let timelineStart: number;
             if (pos === 0) {
               const shifted = prev.map(s => ({ ...s, timelineStart: s.timelineStart + animDur }));
-              return [...shifted, { id: animId, type: "animation" as const, track: animTrack, sourceUrl: `http://localhost:8000${stepResult.video_url}`, timelineStart: 0, duration: animDur, label }];
+              return [...shifted, { id: animId, type: "animation" as const, track: animTrack, sourceUrl: `${API}${stepResult.video_url}`, timelineStart: 0, duration: animDur, label }];
             } else if (pos < 0) {
               const lastEnd = videoSegs.length > 0 ? videoSegs[videoSegs.length - 1].timelineStart + videoSegs[videoSegs.length - 1].duration : 0;
               timelineStart = lastEnd;
             } else {
               timelineStart = pos;
             }
-            return [...prev, { id: animId, type: "animation" as const, track: animTrack, sourceUrl: `http://localhost:8000${stepResult.video_url}`, timelineStart, duration: animDur, label }];
+            return [...prev, { id: animId, type: "animation" as const, track: animTrack, sourceUrl: `${API}${stepResult.video_url}`, timelineStart, duration: animDur, label }];
           });
           setActiveVideoSegId(prev => prev ?? animId);
           continue;
@@ -569,7 +571,7 @@ export default function Home() {
 
         if (stepResult.video_url && stepResult.mode !== "transcribe") {
           const clipId = `clip-${job_id}`;
-          setSegments([{ id: clipId, type: "clip", track: "video", sourceUrl: `http://localhost:8000${stepResult.video_url}`, timelineStart: 0, duration: 0, label: "Clip" }]);
+          setSegments([{ id: clipId, type: "clip", track: "video", sourceUrl: `${API}${stepResult.video_url}`, timelineStart: 0, duration: 0, label: "Clip" }]);
           setActiveVideoSegId(clipId);
           setSelectedSegmentId(null);
         }
@@ -701,7 +703,7 @@ export default function Home() {
 
     let demoFile: File;
     try {
-      const res = await fetch("http://localhost:8000/demo-video");
+      const res = await fetch(`${API}/demo-video`);
       if (!res.ok) throw new Error();
       const blob = await res.blob();
       demoFile = new File([blob], "demo.mp4", { type: "video/mp4" });
@@ -767,10 +769,10 @@ export default function Home() {
     const params = new URLSearchParams({ job_id: jobId, ...(srtKey ? { srt_key: srtKey } : {}) });
     try {
       const exportSegments = segments.map(s => ({
-        source_url: s.sourceUrl.replace("http://localhost:8000", ""),
+        source_url: s.sourceUrl.replace(API, ""),
         timeline_start: s.timelineStart, track: s.track, duration: s.duration,
       }));
-      const res = await fetch(`http://localhost:8000/export?${params}`, {
+      const res = await fetch(`${API}/export?${params}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...style, subtitles: displaySubtitles, segments: exportSegments }),
       });
@@ -1186,7 +1188,7 @@ export default function Home() {
                     </div>
                   ))}
                   {segments.filter(s => s.track === "video").length === 0 && activeClip && (
-                    <VideoPlayer key={activeClip.video_url} videoUrl={`http://localhost:8000${activeClip.video_url}`} subtitles={displaySubtitles} style={style} onVideoMount={el => handleSegmentMount("legacy", el)} />
+                    <VideoPlayer key={activeClip.video_url} videoUrl={`${API}${activeClip.video_url}`} subtitles={displaySubtitles} style={style} onVideoMount={el => handleSegmentMount("legacy", el)} />
                   )}
                 </div>
               </div>
