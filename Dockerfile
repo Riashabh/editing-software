@@ -4,6 +4,8 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     curl \
+    ca-certificates \
+    gnupg \
     && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
@@ -21,7 +23,6 @@ RUN cd remotion-renderer && npm install
 # App code
 COPY api.py main.py ./
 COPY Backend ./Backend
-COPY demo ./demo
 
 RUN mkdir -p temp/clips_out
 
