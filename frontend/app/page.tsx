@@ -64,14 +64,14 @@ const CHIPS = [
 const PIPELINE_STEPS = ["Upload", "Transcribe", "Find", "Reframe", "Caption", "Export"];
 
 const DEMO_STEPS = [
-  { label: "Uploading keynote_raw.mp4",    detail: "142 MB",                              ms: 700 },
-  { label: "Parsing intent",               detail: "GPT-4o-mini · 4 steps identified",    ms: 700 },
-  { label: "Transcribing",                 detail: "Whisper · 312 words · 48s",           ms: 1200 },
-  { label: "Finding best moment",          detail: "04:12 → 04:42",                        ms: 900 },
-  { label: "Reframing to 9:16",            detail: "Face tracked · 1080 × 1920",          ms: 1000 },
-  { label: "Generating subtitles",         detail: "Word-level timings · 14 blocks",      ms: 900 },
-  { label: "Rendering hype intro",         detail: "Remotion · 2.1s",                     ms: 1100 },
-  { label: "Exporting",                    detail: "clip_exported.mp4 · 8.4 MB",          ms: 800 },
+  { label: "Uploading demo.mp4",           detail: "sending to backend…" },
+  { label: "Parsing intent",               detail: "GPT-4o-mini · figuring out your steps" },
+  { label: "Transcribing audio",           detail: "Whisper · word-level timestamps" },
+  { label: "Finding best moment",          detail: "GPT-4o-mini · scanning highlights" },
+  { label: "Reframing",                    detail: "FFmpeg · aspect ratio crop" },
+  { label: "Generating subtitles",         detail: "word timings · karaoke blocks" },
+  { label: "Rendering animation",          detail: "Remotion · React → MP4" },
+  { label: "Exporting",                    detail: "burning subtitles · final cut" },
 ];
 
 function LandingNLETimeline() {
@@ -108,7 +108,7 @@ function LandingNLETimeline() {
         </div>
         <div style={{ height: 42, position: "relative", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
           <svg width="100%" height="100%" viewBox={`0 0 ${samples.length} 40`} preserveAspectRatio="none">
-            {samples.map((v, i) => { const h = v * 34; return <rect key={i} x={i + 0.2} y={20 - h / 2} width="0.6" height={h} fill="rgba(255,255,255,0.14)" />; })}
+            {samples.map((v, i) => { const h = Math.round(v * 340) / 10; const y = Math.round((20 - h / 2) * 1000) / 1000; return <rect key={i} x={i + 0.2} y={y} width="0.6" height={h} fill="rgba(255,255,255,0.14)" />; })}
           </svg>
         </div>
         <div style={{ height: 28, position: "relative", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
@@ -129,33 +129,48 @@ function DemoOverlay({ step, onClose }: { step: number; onClose: () => void }) {
   const isDone = step >= total;
   const current = DEMO_STEPS[Math.min(step, total - 1)];
   const progress = isDone ? 1 : (step + 1) / total;
+  const accentColor = isDone ? "#6EE7B7" : "#60a5fa";
   return (
-    <div style={{ position: "absolute", right: 24, bottom: 180, zIndex: 20, width: 340, padding: 14, background: "rgba(10,11,13,0.92)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, backdropFilter: "blur(18px)", boxShadow: "0 20px 60px -20px rgba(0,0,0,0.8)", color: "rgba(255,255,255,0.85)" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ width: 7, height: 7, borderRadius: "50%", background: isDone ? "#6EE7B7" : "#1e90ff", boxShadow: `0 0 10px ${isDone ? "#6EE7B7" : "#1e90ff"}`, display: "inline-block" }} />
-          <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", color: "rgba(255,255,255,0.55)", fontWeight: 600 }}>{isDone ? "Demo complete" : "Live demo"}</span>
-          <span style={{ fontSize: 10, padding: "2px 6px", background: "rgba(255,255,255,0.06)", borderRadius: 4, fontFamily: "ui-monospace, monospace", color: "rgba(255,255,255,0.6)" }}>{isDone ? `${total}/${total}` : `${step + 1}/${total}`}</span>
+    <div style={{ position: "absolute", right: 24, bottom: 200, zIndex: 20, width: 320, background: "rgba(8,9,11,0.96)", border: `1px solid ${isDone ? "rgba(110,231,183,0.3)" : "rgba(96,165,250,0.2)"}`, borderRadius: 14, backdropFilter: "blur(24px)", boxShadow: `0 24px 64px -16px rgba(0,0,0,0.9), 0 0 0 1px rgba(255,255,255,0.04), inset 0 1px 0 rgba(255,255,255,0.06)`, color: "rgba(255,255,255,0.85)", overflow: "hidden" }}>
+      {/* top bar */}
+      <div style={{ padding: "12px 14px 10px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+            <span style={{ width: 7, height: 7, borderRadius: "50%", background: accentColor, boxShadow: `0 0 8px 2px ${accentColor}`, display: "inline-block", animation: isDone ? "none" : "demoPulse 1.2s ease-in-out infinite" }} />
+            <span style={{ fontSize: 10, textTransform: "uppercase", letterSpacing: "0.13em", color: "rgba(255,255,255,0.45)", fontWeight: 700, fontFamily: "ui-monospace,monospace" }}>{isDone ? "Complete" : "Running"}</span>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 10, padding: "2px 7px", background: isDone ? "rgba(110,231,183,0.12)" : "rgba(96,165,250,0.1)", borderRadius: 4, fontFamily: "ui-monospace,monospace", color: isDone ? "#6EE7B7" : "#93c5fd" }}>{isDone ? "✓ done" : `${step + 1} / ${total}`}</span>
+            <button onClick={onClose} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", display: "flex", padding: 2 }}><Ico.close size={11} /></button>
+          </div>
         </div>
-        <button onClick={onClose} style={{ background: "transparent", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", display: "flex" }}><Ico.close size={11} /></button>
       </div>
-      <div style={{ fontSize: 13, fontWeight: 500, color: "#fff", marginBottom: 3 }}>{isDone ? "Your clip is ready" : current.label}</div>
-      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.55)", fontFamily: "ui-monospace, monospace", marginBottom: 12 }}>{current.detail}</div>
-      <div style={{ marginBottom: 12, display: "flex", flexDirection: "column", gap: 4 }}>
+      {/* current step hero */}
+      <div style={{ padding: "14px 14px 10px" }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: isDone ? "#6EE7B7" : "#fff", marginBottom: 4, letterSpacing: "-0.01em" }}>{isDone ? "Your clip is ready — downloading" : current.label}</div>
+        <div style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontFamily: "ui-monospace,monospace" }}>{isDone ? "clip_exported.mp4" : current.detail}</div>
+      </div>
+      {/* step list */}
+      <div style={{ padding: "0 14px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
         {DEMO_STEPS.map((s, i) => {
           const done = i < step || isDone;
           const active = i === step && !isDone;
           return (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, fontFamily: "ui-monospace, monospace", color: active ? "#fff" : done ? "rgba(255,255,255,0.5)" : "rgba(255,255,255,0.2)" }}>
-              <span style={{ width: 5, height: 5, borderRadius: "50%", background: active ? "#1e90ff" : done ? "rgba(255,255,255,0.6)" : "rgba(255,255,255,0.15)", display: "inline-block" }} />
-              {s.label.toLowerCase()}
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 11, fontFamily: "ui-monospace,monospace", color: active ? "#fff" : done ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.18)", transition: "color 0.3s" }}>
+              <span style={{ flexShrink: 0, width: 16, textAlign: "center", fontSize: done && !active ? 11 : 10, color: active ? accentColor : done ? "#6EE7B7" : "rgba(255,255,255,0.15)" }}>
+                {done && !active ? "✓" : active ? "▶" : "○"}
+              </span>
+              <span style={{ fontWeight: active ? 600 : 400 }}>{s.label}</span>
+              {active && <span style={{ marginLeft: "auto", fontSize: 9, color: "rgba(255,255,255,0.3)", letterSpacing: "0.1em" }}>LIVE</span>}
             </div>
           );
         })}
       </div>
-      <div style={{ height: 2, background: "rgba(255,255,255,0.08)", borderRadius: 2, overflow: "hidden" }}>
-        <div style={{ width: `${progress * 100}%`, height: "100%", background: isDone ? "#6EE7B7" : "#1e90ff", transition: "width .35s ease" }} />
+      {/* progress bar */}
+      <div style={{ height: 3, background: "rgba(255,255,255,0.06)" }}>
+        <div style={{ width: `${progress * 100}%`, height: "100%", background: isDone ? "#6EE7B7" : "linear-gradient(90deg, #3b82f6, #60a5fa)", transition: "width 0.5s cubic-bezier(0.4,0,0.2,1)", boxShadow: isDone ? "0 0 8px #6EE7B7" : "0 0 8px #60a5fa" }} />
       </div>
+      <style>{`@keyframes demoPulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:0.5; transform:scale(1.5); } }`}</style>
     </div>
   );
 }
@@ -339,10 +354,42 @@ export default function Home() {
   const [showChat, setShowChat] = useState(true);
   const [showProps, setShowProps] = useState(true);
   const [demoStep, setDemoStep] = useState(-1);
+  const [demoRunning, setDemoRunning] = useState(false);
+  const demoAbortRef = useRef(false);
+  const demoAutoExportRef = useRef(false);
   const demoTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const videoRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
+
+  // Advance demo overlay step as real assistant messages arrive
+  useEffect(() => {
+    if (demoStep < 0) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant") return;
+    const t = last.text.toLowerCase();
+    if (t.includes("figuring out")) setDemoStep(1);
+    else if (t.includes("transcrib")) setDemoStep(2);
+    else if (t.includes("finding") || t.includes("best moment")) setDemoStep(3);
+    else if (t.includes("reframe") || t.includes("crop")) setDemoStep(4);
+    else if (t.includes("subtitle") || t.includes("caption")) setDemoStep(5);
+    else if (t.includes("animat") || t.includes("intro") || t.includes("outro")) setDemoStep(6);
+    else if (t.includes("done") || t.includes("opening")) setDemoStep(7);
+  }, [messages, demoStep]);
+
+  // Auto-export when demo finishes processing
+  useEffect(() => {
+    if (!demoAutoExportRef.current || !result) return;
+    demoAutoExportRef.current = false;
+    setDemoStep(7);
+    // Small delay so the editor has time to mount the video
+    const t = setTimeout(() => {
+      setDemoStep(DEMO_STEPS.length); // "Done" state
+      handleExport();
+    }, 1800);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result]);
 
   useEffect(() => {
     let i = 0;
@@ -429,10 +476,10 @@ export default function Home() {
     setCurrentTime(0); setDuration(0); videoRefs.current.clear(); setView("chat");
   };
 
-  const handleSend = async () => {
-    const text = chatInput.trim();
-    if (!text && !chatFile) return;
-    const file = chatFile ?? uploadedFile;
+  const handleSend = async (overrideText?: string, overrideFile?: File) => {
+    const text = (overrideText !== undefined ? overrideText : chatInput).trim();
+    const file = overrideFile ?? chatFile ?? uploadedFile;
+    if (!text && !file) return;
     if (!file) {
       addMessage({ role: "user", text });
       setChatInput("");
@@ -440,8 +487,8 @@ export default function Home() {
       return;
     }
 
-    if (chatFile) setUploadedFile(chatFile);
-    addMessage({ role: "user", text: text || "Process this video", fileName: chatFile?.name });
+    if (overrideFile ?? chatFile) setUploadedFile(overrideFile ?? chatFile!);
+    addMessage({ role: "user", text: text || "Process this video", fileName: (overrideFile ?? chatFile)?.name });
     setChatInput(""); setChatFile(null); setProcessing(true);
 
     try {
@@ -639,24 +686,62 @@ export default function Home() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const runDemo = () => {
-    demoTimers.current.forEach(clearTimeout);
-    demoTimers.current = [];
-    setDemoStep(0);
-    let acc = 0;
-    DEMO_STEPS.forEach((s, i) => {
-      const t = setTimeout(() => setDemoStep(i), acc);
-      demoTimers.current.push(t);
-      acc += s.ms;
-    });
-    const done = setTimeout(() => setDemoStep(DEMO_STEPS.length), acc);
-    demoTimers.current.push(done);
+  const runDemo = async () => {
+    if (demoRunning) {
+      demoAbortRef.current = true;
+      setDemoRunning(false);
+      setChatInput("");
+      setChatFile(null);
+      return;
+    }
+
+    demoAbortRef.current = false;
+    setDemoRunning(true);
+    setDemoStep(0); // show overlay immediately — "Uploading…"
+
+    let demoFile: File;
+    try {
+      const res = await fetch("http://localhost:8000/demo-video");
+      if (!res.ok) throw new Error();
+      const blob = await res.blob();
+      demoFile = new File([blob], "demo.mp4", { type: "video/mp4" });
+    } catch {
+      setDemoRunning(false);
+      setDemoStep(-1);
+      addMessage({ role: "assistant", text: "Demo video not available — add demo/demo.mp4 to the backend." });
+      return;
+    }
+
+    if (demoAbortRef.current) { setDemoRunning(false); setDemoStep(-1); return; }
+
+    setChatFile(demoFile);
+
+    const DEMO_PROMPT = "find best moment, add subtitles";
+    for (let i = 0; i <= DEMO_PROMPT.length; i++) {
+      if (demoAbortRef.current) { setChatFile(null); setChatInput(""); setDemoRunning(false); setDemoStep(-1); return; }
+      setChatInput(DEMO_PROMPT.slice(0, i));
+      await new Promise(r => setTimeout(r, 60));
+    }
+
+    if (demoAbortRef.current) { setChatFile(null); setChatInput(""); setDemoRunning(false); setDemoStep(-1); return; }
+
+    await new Promise(r => setTimeout(r, 400));
+
+    // Flag for the result useEffect to trigger export
+    demoAutoExportRef.current = true;
+    setDemoRunning(false);
+    await handleSend(DEMO_PROMPT, demoFile);
   };
 
   const cancelDemo = () => {
+    demoAbortRef.current = true;
+    demoAutoExportRef.current = false;
     demoTimers.current.forEach(clearTimeout);
     demoTimers.current = [];
     setDemoStep(-1);
+    setDemoRunning(false);
+    setChatInput("");
+    setChatFile(null);
   };
 
   useEffect(() => () => { demoTimers.current.forEach(clearTimeout); }, []);
@@ -811,7 +896,7 @@ export default function Home() {
                       onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                       placeholder="Describe what you want…"
                       style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 13, color: "var(--ink)", fontFamily: "inherit" }} />
-                    <button onClick={handleSend} disabled={processing || (!chatInput.trim() && !chatFile)}
+                    <button onClick={() => handleSend()} disabled={processing || (!chatInput.trim() && !chatFile)}
                       style={{ width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--bg)", background: "var(--ink)", border: "none", borderRadius: 7, cursor: "pointer", opacity: (!chatInput.trim() && !chatFile) ? 0.3 : 1 }}>
                       <Ico.send size={10} />
                     </button>
@@ -888,7 +973,7 @@ export default function Home() {
                       onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                       placeholder={placeholder} rows={1}
                       style={{ flex: 1, resize: "none", border: "none", outline: "none", background: "transparent", fontSize: 13, lineHeight: 1.4, color: "var(--text)", padding: "5px 0", fontFamily: "var(--font-ui)" }} />
-                    <button onClick={handleSend} disabled={processing || (!chatInput.trim() && !(chatFile ?? uploadedFile))}
+                    <button onClick={() => handleSend()} disabled={processing || (!chatInput.trim() && !(chatFile ?? uploadedFile))}
                       style={{ width: 34, height: 34, display: "flex", alignItems: "center", justifyContent: "center", color: "#0a0b0d", background: "#fff", border: "none", borderRadius: 9, cursor: "pointer", flexShrink: 0, opacity: (!chatInput.trim() && !(chatFile ?? uploadedFile)) ? 0.25 : 1, transition: "opacity .15s" }}>
                       <Ico.send size={12} />
                     </button>
@@ -907,8 +992,8 @@ export default function Home() {
 
                 {/* CTA row */}
                 <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 20 }}>
-                  <button onClick={runDemo} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 18px", fontSize: 12, fontWeight: 500, color: "#0a0b0d", background: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "var(--font-ui)" }}>
-                    <Ico.play size={10} /> Try it yourself — one click
+                  <button onClick={runDemo} disabled={processing && !demoRunning} style={{ display: "inline-flex", alignItems: "center", gap: 8, padding: "10px 18px", fontSize: 12, fontWeight: 500, color: demoRunning ? "rgba(255,255,255,0.7)" : "#0a0b0d", background: demoRunning ? "transparent" : "#fff", border: demoRunning ? "1px solid rgba(255,255,255,0.2)" : "none", borderRadius: 8, cursor: (processing && !demoRunning) ? "not-allowed" : "pointer", fontFamily: "var(--font-ui)" }}>
+                    {demoRunning ? <><Ico.close size={10} /> Cancel demo</> : <><Ico.play size={10} /> Try it yourself — one click</>}
                   </button>
                   {result && (
                     <button onClick={() => setView("editor")} style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 14px", fontSize: 12, fontWeight: 500, color: "rgba(255,255,255,0.7)", background: "transparent", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, cursor: "pointer", fontFamily: "var(--font-ui)" }}>
@@ -1043,7 +1128,7 @@ export default function Home() {
                       onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                       placeholder="Edit this clip…"
                       style={{ flex: 1, border: "none", outline: "none", background: "transparent", fontSize: 12, color: "var(--ink)", fontFamily: "inherit", minWidth: 0 }} />
-                    <button onClick={handleSend} disabled={processing || (!chatInput.trim() && !chatFile)}
+                    <button onClick={() => handleSend()} disabled={processing || (!chatInput.trim() && !chatFile)}
                       style={{ width: 24, height: 24, borderRadius: 6, background: "var(--ink)", color: "var(--bg)", border: "none", display: "inline-flex", alignItems: "center", justifyContent: "center", cursor: "pointer", opacity: (!chatInput.trim() && !chatFile) ? 0.3 : 1 }}>
                       <Ico.send size={9} />
                     </button>

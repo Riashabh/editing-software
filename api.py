@@ -59,7 +59,16 @@ def _clean_old_temp(max_age_hours: float = 2):
 
 _clean_old_temp()
 os.makedirs("temp/clips_out", exist_ok=True)
+os.makedirs("demo", exist_ok=True)
 app.mount("/clips", StaticFiles(directory="temp/clips_out"), name="clips")
+
+
+@app.get("/demo-video")
+def get_demo_video():
+    path = "demo/demo.mp4"
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="Demo video not found. Place demo.mp4 in the demo/ directory.")
+    return FileResponse(path, media_type="video/mp4", filename="demo.mp4")
 
 
 @app.post("/cleanup")
