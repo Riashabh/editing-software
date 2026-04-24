@@ -16,3 +16,4 @@ remotion-renderer/.remotion/
 remotion-renderer/src/Generated.tsx
 # Added by code-review-graph
 .code-review-graph/
+.DS_Store
