@@ -26,6 +26,9 @@ export default function RootLayout({
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Anton&family=Oswald:wght@700&family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=DM+Serif+Display&family=Permanent+Marker&family=Righteous&family=Bungee&family=Black+Han+Sans&family=Archivo+Black&family=Barlow+Condensed:wght@700;900&display=swap" rel="stylesheet" />
+        <link rel="icon" href="/icon-white.ico" media="(prefers-color-scheme: dark)" />
+        <link rel="icon" href="/icon-black.png" media="(prefers-color-scheme: light)" />
+
       </head>
       <body className="min-h-full flex flex-col">{children}</body>
     </html>
