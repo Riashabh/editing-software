@@ -778,10 +778,17 @@ export default function Home() {
         body: JSON.stringify({ ...style, subtitles: displaySubtitles, segments: exportSegments }),
       });
       if (!res.ok) { const err = await res.json(); alert("Export failed: " + err.detail); return; }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      const contentType = res.headers.get("content-type") ?? "";
+      let downloadUrl: string;
+      if (contentType.includes("application/json")) {
+        const data = await res.json();
+        downloadUrl = data.url;
+      } else {
+        const blob = await res.blob();
+        downloadUrl = URL.createObjectURL(blob);
+      }
       const a = document.createElement("a");
-      a.href = url; a.download = "clip_exported.mp4"; a.click();
+      a.href = downloadUrl; a.download = "clip_exported.mp4"; a.click();
     } catch { alert("Export failed."); }
     finally { setExporting(false); }
   };

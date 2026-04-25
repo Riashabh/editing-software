@@ -717,5 +717,5 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
 
     if storage.enabled():
         url = storage.upload(out_path, f"{key}_exported.mp4")
-        return RedirectResponse(url)
+        return Response(content=json.dumps({"url": url}), media_type="application/json")
     return FileResponse(out_path, media_type="video/mp4", filename="clip_exported.mp4")
