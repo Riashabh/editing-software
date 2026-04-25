@@ -5,6 +5,7 @@ import StylePanel, { SubStyle, Subtitle, DEFAULT_STYLE } from "./components/Styl
 import { Ico } from "./components/icons";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const toUrl = (path: string) => path.startsWith("http") ? path : `${API}${path}`;
 
 interface Message {
   role: "user" | "assistant";
@@ -552,14 +553,14 @@ export default function Home() {
             let timelineStart: number;
             if (pos === 0) {
               const shifted = prev.map(s => ({ ...s, timelineStart: s.timelineStart + animDur }));
-              return [...shifted, { id: animId, type: "animation" as const, track: animTrack, sourceUrl: `${API}${stepResult.video_url}`, timelineStart: 0, duration: animDur, label }];
+              return [...shifted, { id: animId, type: "animation" as const, track: animTrack, sourceUrl: toUrl(stepResult.video_url!), timelineStart: 0, duration: animDur, label }];
             } else if (pos < 0) {
               const lastEnd = videoSegs.length > 0 ? videoSegs[videoSegs.length - 1].timelineStart + videoSegs[videoSegs.length - 1].duration : 0;
               timelineStart = lastEnd;
             } else {
               timelineStart = pos;
             }
-            return [...prev, { id: animId, type: "animation" as const, track: animTrack, sourceUrl: `${API}${stepResult.video_url}`, timelineStart, duration: animDur, label }];
+            return [...prev, { id: animId, type: "animation" as const, track: animTrack, sourceUrl: toUrl(stepResult.video_url!), timelineStart, duration: animDur, label }];
           });
           setActiveVideoSegId(prev => prev ?? animId);
           continue;
@@ -571,7 +572,7 @@ export default function Home() {
 
         if (stepResult.video_url && stepResult.mode !== "transcribe") {
           const clipId = `clip-${job_id}`;
-          setSegments([{ id: clipId, type: "clip", track: "video", sourceUrl: `${API}${stepResult.video_url}`, timelineStart: 0, duration: 0, label: "Clip" }]);
+          setSegments([{ id: clipId, type: "clip", track: "video", sourceUrl: toUrl(stepResult.video_url!), timelineStart: 0, duration: 0, label: "Clip" }]);
           setActiveVideoSegId(clipId);
           setSelectedSegmentId(null);
         }
@@ -769,7 +770,7 @@ export default function Home() {
     const params = new URLSearchParams({ job_id: jobId, ...(srtKey ? { srt_key: srtKey } : {}) });
     try {
       const exportSegments = segments.map(s => ({
-        source_url: s.sourceUrl.replace(API, ""),
+        source_url: s.sourceUrl.startsWith(API) ? s.sourceUrl.replace(API, "") : s.sourceUrl,
         timeline_start: s.timelineStart, track: s.track, duration: s.duration,
       }));
       const res = await fetch(`${API}/export?${params}`, {
@@ -1188,7 +1189,7 @@ export default function Home() {
                     </div>
                   ))}
                   {segments.filter(s => s.track === "video").length === 0 && activeClip && (
-                    <VideoPlayer key={activeClip.video_url} videoUrl={`${API}${activeClip.video_url}`} subtitles={displaySubtitles} style={style} onVideoMount={el => handleSegmentMount("legacy", el)} />
+                    <VideoPlayer key={activeClip.video_url} videoUrl={toUrl(activeClip.video_url)} subtitles={displaySubtitles} style={style} onVideoMount={el => handleSegmentMount("legacy", el)} />
                   )}
                 </div>
               </div>
