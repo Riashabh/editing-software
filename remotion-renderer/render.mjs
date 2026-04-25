@@ -58,6 +58,11 @@ try {
     codec: "h264",
     outputLocation: outputPath,
     inputProps: {},
+    concurrency: 1,
+    chromiumOptions: {
+      headless: true,
+      gl: "swiftshader",
+    },
   });
 
   console.log("RENDER_SUCCESS:" + outputPath);
