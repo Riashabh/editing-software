@@ -700,40 +700,58 @@ export default function Home() {
 
     demoAbortRef.current = false;
     setDemoRunning(true);
-    setDemoStep(0); // show overlay immediately — "Uploading…"
-
-    let demoFile: File;
-    try {
-      const res = await fetch(`${API}/demo-video`);
-      if (!res.ok) throw new Error();
-      const blob = await res.blob();
-      demoFile = new File([blob], "demo.mp4", { type: "video/mp4" });
-    } catch {
-      setDemoRunning(false);
-      setDemoStep(-1);
-      addMessage({ role: "assistant", text: "Demo video not available — add demo/demo.mp4 to the backend." });
-      return;
-    }
-
-    if (demoAbortRef.current) { setDemoRunning(false); setDemoStep(-1); return; }
-
-    setChatFile(demoFile);
+    setDemoStep(0);
 
     const DEMO_PROMPT = "find best moment, add subtitles";
     for (let i = 0; i <= DEMO_PROMPT.length; i++) {
-      if (demoAbortRef.current) { setChatFile(null); setChatInput(""); setDemoRunning(false); setDemoStep(-1); return; }
+      if (demoAbortRef.current) { setDemoRunning(false); setDemoStep(-1); return; }
       setChatInput(DEMO_PROMPT.slice(0, i));
       await new Promise(r => setTimeout(r, 60));
     }
 
-    if (demoAbortRef.current) { setChatFile(null); setChatInput(""); setDemoRunning(false); setDemoStep(-1); return; }
+    if (demoAbortRef.current) { setChatInput(""); setDemoRunning(false); setDemoStep(-1); return; }
 
     await new Promise(r => setTimeout(r, 400));
 
-    // Flag for the result useEffect to trigger export
-    demoAutoExportRef.current = true;
+    const job_id = Math.random().toString(36).slice(2, 10);
+    setJobId(job_id);
+
+    addMessage({ role: "user", text: DEMO_PROMPT });
+    setChatInput("");
     setDemoRunning(false);
-    await handleSend(DEMO_PROMPT, demoFile);
+    setProcessing(true);
+
+    try {
+      addMessage({ role: "assistant", text: "Got it, figuring out what you want…" });
+      await new Promise(r => setTimeout(r, 300));
+      addMessage({ role: "assistant", text: "Transcribing the video…" });
+      setDemoStep(2);
+
+      const res = await fetch(
+        `${API}/demo-process?job_id=${job_id}&mode=single&subtitles=true`,
+        { method: "POST" }
+      );
+      if (!res.ok) {
+        const e = await res.json().catch(() => ({ detail: "Demo failed" }));
+        throw new Error(e.detail);
+      }
+      const data: ProcessResult = await res.json();
+      setDemoStep(DEMO_STEPS.length);
+      demoAutoExportRef.current = false;
+
+      addMessage({ role: "assistant", text: "Done! Opening your clip…" });
+      setResult(data);
+      setEditedSubtitles(null);
+      setSelectedClip(0);
+      setSegments([{ id: `seg-${Date.now()}`, type: "clip", track: "video", sourceUrl: toUrl(data.video_url ?? ""), timelineStart: 0, duration: 0, label: "Clip" }]);
+      setTimeout(() => setView("editor"), 800);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Demo failed";
+      addMessage({ role: "assistant", text: `Demo video not available — ${msg}` });
+      setDemoStep(-1);
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const cancelDemo = () => {

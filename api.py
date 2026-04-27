@@ -79,6 +79,51 @@ def get_demo_video():
     return FileResponse(path, media_type="video/mp4", filename="demo.mp4")
 
 
+@app.post("/demo-process")
+async def demo_process(job_id: str = "", mode: str = "single", count: int = 1, aspectRatio: str = "original", subtitles: bool = False):
+    import urllib.request
+
+    if not job_id:
+        import random, string
+        job_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
+    input_path = f"temp/{job_id}_input.mp4"
+    os.makedirs("temp", exist_ok=True)
+    os.makedirs("temp/clips_out", exist_ok=True)
+
+    demo_r2_url = f"{os.environ['R2_PUBLIC_URL'].rstrip('/')}/demo/demo.mp4"
+    with urllib.request.urlopen(demo_r2_url) as response, open(input_path, "wb") as f:
+        shutil.copyfileobj(response, f)
+
+    try:
+        audio = extract_audio(input_path)
+        transcript = transcribe_audio(audio)
+
+        count = count if mode == "multi" else 1
+        moments = find_best_moments(transcript, count=count)
+
+        merged = cut_and_merge(input_path, moments, output_path=f"temp/{job_id}_merged.mp4")
+        out_path = f"temp/clips_out/{job_id}_v.mp4"
+        shutil.copy(merged, out_path)
+
+        sub_json = []
+        if subtitles:
+            _, sub_data = generate_srt(transcript, moments, output_path=f"temp/{job_id}.srt")
+            sub_json = subtitles_to_json(sub_data)
+            with open(f"temp/{job_id}_words.json", "w") as wf:
+                json.dump(sub_json, wf)
+
+        return Response(content=json.dumps({
+            "mode": "single",
+            "video_url": _clip_url(out_path, f"{job_id}_v.mp4"),
+            "subtitles": sub_json,
+            "srt_key": job_id,
+            "aspectRatio": aspectRatio,
+        }), media_type="application/json")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/cleanup")
 def cleanup():
     _clean_temp()
