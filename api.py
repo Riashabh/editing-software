@@ -123,6 +123,8 @@ async def demo_process(job_id: str = "", mode: str = "single", count: int = 1, a
             "aspectRatio": aspectRatio,
         }), media_type="application/json")
     except Exception as e:
+        import traceback
+        print("DEMO-PROCESS ERROR:", traceback.format_exc(), flush=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
