@@ -743,7 +743,10 @@ export default function Home() {
       setResult(data);
       setEditedSubtitles(null);
       setSelectedClip(0);
-      setSegments([{ id: `seg-${Date.now()}`, type: "clip", track: "video", sourceUrl: toUrl(data.video_url ?? ""), timelineStart: 0, duration: 0, label: "Clip" }]);
+      const clipId = `clip-${job_id}`;
+      setSegments([{ id: clipId, type: "clip", track: "video", sourceUrl: toUrl(data.video_url ?? ""), timelineStart: 0, duration: 0, label: "Clip" }]);
+      setActiveVideoSegId(clipId);
+      setSelectedSegmentId(null);
       setTimeout(() => setView("editor"), 800);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Demo failed";
