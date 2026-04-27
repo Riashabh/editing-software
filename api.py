@@ -81,8 +81,6 @@ def get_demo_video():
 
 @app.post("/demo-process")
 async def demo_process(job_id: str = "", mode: str = "single", count: int = 1, aspectRatio: str = "original", subtitles: str = "false"):
-    import urllib.request
-
     want_subtitles = subtitles.lower() in ("1", "true", "yes")
 
     if not job_id:
@@ -94,8 +92,13 @@ async def demo_process(job_id: str = "", mode: str = "single", count: int = 1, a
     os.makedirs("temp/clips_out", exist_ok=True)
 
     try:
-        demo_r2_url = f"{os.environ['R2_PUBLIC_URL'].rstrip('/')}/demo/demo.mp4"
-        with urllib.request.urlopen(demo_r2_url) as response, open(input_path, "wb") as f:
+        presigned_url = storage._client().generate_presigned_url(
+            "get_object",
+            Params={"Bucket": os.environ["R2_BUCKET"], "Key": "demo/demo.mp4"},
+            ExpiresIn=3600,
+        )
+        import urllib.request
+        with urllib.request.urlopen(presigned_url) as response, open(input_path, "wb") as f:
             shutil.copyfileobj(response, f)
 
         audio = extract_audio(input_path)
