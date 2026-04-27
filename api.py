@@ -80,8 +80,10 @@ def get_demo_video():
 
 
 @app.post("/demo-process")
-async def demo_process(job_id: str = "", mode: str = "single", count: int = 1, aspectRatio: str = "original", subtitles: bool = False):
+async def demo_process(job_id: str = "", mode: str = "single", count: int = 1, aspectRatio: str = "original", subtitles: str = "false"):
     import urllib.request
+
+    want_subtitles = subtitles.lower() in ("1", "true", "yes")
 
     if not job_id:
         import random, string
@@ -91,11 +93,11 @@ async def demo_process(job_id: str = "", mode: str = "single", count: int = 1, a
     os.makedirs("temp", exist_ok=True)
     os.makedirs("temp/clips_out", exist_ok=True)
 
-    demo_r2_url = f"{os.environ['R2_PUBLIC_URL'].rstrip('/')}/demo/demo.mp4"
-    with urllib.request.urlopen(demo_r2_url) as response, open(input_path, "wb") as f:
-        shutil.copyfileobj(response, f)
-
     try:
+        demo_r2_url = f"{os.environ['R2_PUBLIC_URL'].rstrip('/')}/demo/demo.mp4"
+        with urllib.request.urlopen(demo_r2_url) as response, open(input_path, "wb") as f:
+            shutil.copyfileobj(response, f)
+
         audio = extract_audio(input_path)
         transcript = transcribe_audio(audio)
 
@@ -107,7 +109,7 @@ async def demo_process(job_id: str = "", mode: str = "single", count: int = 1, a
         shutil.copy(merged, out_path)
 
         sub_json = []
-        if subtitles:
+        if want_subtitles:
             _, sub_data = generate_srt(transcript, moments, output_path=f"temp/{job_id}.srt")
             sub_json = subtitles_to_json(sub_data)
             with open(f"temp/{job_id}_words.json", "w") as wf:
