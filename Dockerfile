@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Remotion renderer
 COPY remotion-renderer ./remotion-renderer
-RUN cd remotion-renderer && npm install
+RUN cd remotion-renderer && npm install && npx remotion browser ensure
 
 # App code
 COPY api.py main.py ./
