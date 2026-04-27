@@ -247,7 +247,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     subprocess.run([
         ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
         "-i", video_path, "-vf", vf,
-        "-c:v", "libx264", "-preset", "fast", "-crf", "18",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
         "-c:a", "copy", output_path,
     ], check=True)
 
@@ -422,7 +422,7 @@ async def crop_video(file: UploadFile = File(...), aspectRatio: str = "9/16", jo
             subprocess.run([
                 ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
                 "-i", input_path, "-vf", crop_map[aspectRatio],
-                "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "copy", out_path,
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-c:a", "copy", out_path,
             ], check=True)
         else:
             shutil.copy(input_path, out_path)
@@ -701,7 +701,7 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
                 "-filter_complex",
                 f"[0:v][1:v]overlay=0:0:enable='between(t,{fx.timeline_start},{fx.timeline_start + fx.duration})'[v]",
                 "-map", "[v]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "copy",
+                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-c:a", "copy",
                 overlay_out], check=True)
             video_path = overlay_out
     else:
@@ -751,7 +751,7 @@ async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""
             subprocess.run(
                 [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
                  "-i", source, "-vf", crop_map[style.aspectRatio],
-                 "-c:v", "libx264", "-preset", "fast", "-crf", "18", "-c:a", "copy", cropped],
+                 "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-c:a", "copy", cropped],
                 check=True,
             )
             source = cropped

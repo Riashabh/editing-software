@@ -803,13 +803,15 @@ export default function Home() {
       let downloadUrl: string;
       if (contentType.includes("application/json")) {
         const data = await res.json();
-        downloadUrl = data.url;
+        const blob = await fetch(data.url).then(r => r.blob());
+        downloadUrl = URL.createObjectURL(blob);
       } else {
         const blob = await res.blob();
         downloadUrl = URL.createObjectURL(blob);
       }
       const a = document.createElement("a");
       a.href = downloadUrl; a.download = "clip_exported.mp4"; a.click();
+      URL.revokeObjectURL(downloadUrl);
     } catch { alert("Export failed."); }
     finally { setExporting(false); }
   };
