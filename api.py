@@ -606,19 +606,39 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track:
     code_b64 = base64.b64encode(component_code.encode()).decode()
 
     # ── 4. Render animation ───────────────────────────────────────────────────
+    # Cap render resolution to avoid OOM on Railway; scale up after if needed
+    MAX_DIM = 720
+    scale = min(1.0, MAX_DIM / max(width, height))
+    render_w = int(width * scale) & ~1   # must be even for h264
+    render_h = int(height * scale) & ~1
+
     render_script = os.path.join(REMOTION_DIR, "render.mjs")
+    out_anim_lowres = out_anim.replace(".mp4", "_lowres.mp4")
     try:
         render_result = subprocess.run(
             ["node", render_script,
-             "--code", code_b64, "--output", out_anim,
+             "--code", code_b64, "--output", out_anim_lowres,
              "--duration", str(duration), "--fps", str(fps),
-             "--width", str(width), "--height", str(height)],
+             "--width", str(render_w), "--height", str(render_h)],
             capture_output=True, text=True, cwd=REMOTION_DIR, timeout=120
         )
         if render_result.returncode != 0 or "RENDER_ERROR" in render_result.stdout:
             raise HTTPException(status_code=500, detail=f"Render failed: {render_result.stderr or render_result.stdout}")
     except subprocess.TimeoutExpired:
         raise HTTPException(status_code=500, detail="Render timed out")
+
+    # Scale back up to original resolution if we rendered at lower res
+    if scale < 1.0:
+        subprocess.run([
+            ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+            "-i", out_anim_lowres,
+            "-vf", f"scale={width}:{height}",
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-c:a", "copy",
+            out_anim,
+        ], check=True)
+    else:
+        import shutil as _shutil
+        _shutil.move(out_anim_lowres, out_anim)
 
     # ── 5. Add silent audio so browser can play alongside audio clips ─────────
     out_anim_final = out_anim.replace(".mp4", "_ready.mp4")
