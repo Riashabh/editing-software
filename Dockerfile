@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     curl \
     ca-certificates \
     gnupg \
+    chromium \
     libnspr4 \
     libnss3 \
     libatk1.0-0 \
@@ -31,7 +32,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Remotion renderer
 COPY remotion-renderer ./remotion-renderer
-RUN cd remotion-renderer && npm install --legacy-peer-deps --no-audit && npx remotion browser ensure
+RUN cd remotion-renderer && npm install --legacy-peer-deps --no-audit
 
 # App code
 COPY api.py main.py ./

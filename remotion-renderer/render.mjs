@@ -59,6 +59,7 @@ try {
     outputLocation: outputPath,
     inputProps: {},
     concurrency: 1,
+    browserExecutable: process.env.CHROMIUM_PATH || null,
     chromiumOptions: {
       headless: true,
       gl: "swiftshader",
