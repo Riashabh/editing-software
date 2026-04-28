@@ -59,11 +59,20 @@ try {
     outputLocation: outputPath,
     inputProps: {},
     concurrency: 1,
+    jpegQuality: 80,
+    crf: 28,
+    imageFormat: "jpeg",
     browserExecutable: process.env.CHROMIUM_PATH || null,
     chromiumOptions: {
       headless: true,
       gl: "swiftshader",
     },
+    ffmpegOverride: ({ args }) => [
+      ...args,
+      "-threads", "1",
+      "-filter_threads", "1",
+      "-filter_complex_threads", "1",
+    ],
   });
 
   console.log("RENDER_SUCCESS:" + outputPath);

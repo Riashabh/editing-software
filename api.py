@@ -606,11 +606,10 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track:
     code_b64 = base64.b64encode(component_code.encode()).decode()
 
     # ── 4. Render animation ───────────────────────────────────────────────────
-    # Cap render resolution to avoid OOM on Railway; scale up after if needed
-    MAX_DIM = 720
-    scale = min(1.0, MAX_DIM / max(width, height))
-    render_w = int(width * scale) & ~1   # must be even for h264
-    render_h = int(height * scale) & ~1
+    # Render at fixed 720x1280 to stay within Railway's memory budget;
+    # the existing scale-up block below restores the requested resolution.
+    render_w, render_h = 720, 1280
+    scale = min(1.0, render_w / width)
 
     render_script = os.path.join(REMOTION_DIR, "render.mjs")
     out_anim_lowres = out_anim.replace(".mp4", "_lowres.mp4")
