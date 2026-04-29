@@ -20,7 +20,7 @@ def progress(n):
     print(f"\r{uploaded_bytes[0]/1e6:.1f} MB uploaded", end="", flush=True)
 
 s3.upload_file(
-    "demo/demo.mp4",
+    "demo/demo_compressed.mp4",
     os.environ["R2_BUCKET"],
     "demo/demo.mp4",
     ExtraArgs={"ContentType": "video/mp4"},
