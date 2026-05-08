@@ -567,7 +567,7 @@ export default function HowItWorks() {
                   ← Back to home
                 </button>
               </Link>
-              <a href="https://github.com/Riashabh" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
+              <a href="https://github.com/Riashabh/editing-software" target="_blank" rel="noopener noreferrer" style={{ textDecoration: "none" }}>
                 <button style={{ padding: "12px 28px", fontSize: 13, fontWeight: 500, background: "transparent", color: "var(--text-muted)", border: "1px solid var(--border-strong)", borderRadius: 10, cursor: "pointer", fontFamily: "var(--font-ui)" }}>
                   GitHub ↗
                 </button>
