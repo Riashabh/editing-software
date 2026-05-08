@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect, useMemo } from "react";
+import Link from "next/link";
 import VideoPlayer from "./components/VideoPlayer";
 import StylePanel, { SubStyle, Subtitle, DEFAULT_STYLE } from "./components/StylePanel";
 import { Ico } from "./components/icons";
@@ -858,7 +859,7 @@ export default function Home() {
           }}>
             <span style={{ fontSize: 13, fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color: "var(--text)", fontFamily: "var(--font-ui)" }}>Wordcut</span>
             <div style={{ display: "flex", gap: 28, fontSize: 12, color: "var(--text-muted)", fontFamily: "var(--font-ui)" }}>
-              <span style={{ cursor: "pointer" }}>How it works</span>
+              <Link href="/how-it-works" style={{ cursor: "pointer", color: "var(--text-muted)", textDecoration: "none", fontSize: 12, fontFamily: "var(--font-ui)" }}>How it works</Link>
               <span style={{ cursor: "pointer" }}>Pricing</span>
               <span style={{ cursor: "pointer" }}>Docs</span>
             </div>
