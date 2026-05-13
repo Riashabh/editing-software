@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=720, height=1280" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      html, body {
+        width: 720px;
+        height: 1280px;
+        overflow: hidden;
+        background: #06060e;
+      }
+
+      #root {
+        width: 720px;
+        height: 1280px;
+        position: relative;
+        overflow: hidden;
+        background: #06060e;
+      }
+
+      /* ── LAYER 0: deep atmosphere ──────────────────────────────────── */
+
+      /* Two overlapping radials for depth — amber + cold blue offset */
+      .bg-warm {
+        position: absolute;
+        width: 800px; height: 800px;
+        border-radius: 50%;
+        background: radial-gradient(circle,
+          rgba(220,140,20,0.20) 0%,
+          rgba(160,80,10,0.08) 45%,
+          transparent 70%);
+        top: 30%; left: 50%;
+        transform: translate(-50%, -50%);
+        will-change: transform, opacity;
+      }
+      .bg-cold {
+        position: absolute;
+        width: 500px; height: 500px;
+        border-radius: 50%;
+        background: radial-gradient(circle,
+          rgba(60,80,200,0.12) 0%,
+          transparent 70%);
+        top: 68%; left: 60%;
+        will-change: transform;
+      }
+
+      /* Film grain */
+      .grain {
+        position: absolute; inset: 0;
+        background-image:
+          radial-gradient(rgba(255,255,255,0.055) 1px, transparent 1.2px),
+          radial-gradient(rgba(0,0,0,0.20) 1px, transparent 1.2px);
+        background-size: 3px 3px, 5px 5px;
+        mix-blend-mode: overlay;
+        opacity: 0.24;
+        pointer-events: none;
+      }
+
+      /* Ghost oversized letter — bleeds top-right */
+      .ghost-letter {
+        position: absolute;
+        top: -80px; right: -40px;
+        font-family: "Bebas Neue", "Impact", sans-serif;
+        font-size: 560px;
+        font-weight: 900;
+        color: rgba(220,150,30,0.035);
+        letter-spacing: -20px;
+        line-height: 1;
+        user-select: none;
+        pointer-events: none;
+        will-change: transform;
+      }
+
+      /* Subtle perspective grid — bottom third, angled */
+      .grid-floor {
+        position: absolute;
+        bottom: 0; left: -60px; right: -60px;
+        height: 380px;
+        background:
+          repeating-linear-gradient(0deg,
+            rgba(220,150,30,0.04) 0 1px, transparent 1px 70px),
+          repeating-linear-gradient(90deg,
+            rgba(220,150,30,0.04) 0 1px, transparent 1px 70px);
+        transform: perspective(600px) rotateX(52deg);
+        transform-origin: bottom center;
+        pointer-events: none;
+      }
+
+      /* ── LAYER 1: structural chrome ────────────────────────────────── */
+
+      /* Vertical accent bar — left edge */
+      .vert-bar {
+        position: absolute;
+        left: 52px; top: 0;
+        width: 2px; height: 0;
+        background: linear-gradient(180deg,
+          transparent 0%,
+          rgba(220,150,30,0.7) 30%,
+          rgba(220,150,30,0.9) 60%,
+          transparent 100%);
+        will-change: height;
+      }
+
+      /* Horizontal rules */
+      .rule-top {
+        position: absolute;
+        left: 64px; top: 468px;
+        width: 0; height: 1px;
+        background: rgba(220,150,30,0.55);
+      }
+      .rule-bottom {
+        position: absolute;
+        left: 64px; top: 648px;
+        width: 0; height: 1px;
+        background: rgba(220,150,30,0.35);
+      }
+
+      /* Label above name */
+      .label-above {
+        position: absolute;
+        left: 64px; top: 440px;
+        font-family: "DM Sans", "Helvetica Neue", sans-serif;
+        font-size: 16px;
+        font-weight: 300;
+        letter-spacing: 6px;
+        text-transform: uppercase;
+        color: rgba(220,150,30,0.65);
+        opacity: 0;
+        will-change: transform, opacity;
+      }
+
+      /* ── LAYER 2: name — gradient chrome text ──────────────────────── */
+
+      .name-wrap {
+        position: absolute;
+        left: 64px; top: 478px;
+        will-change: transform, opacity, filter;
+      }
+
+      /* Chrome gradient sweep on the name */
+      .name-text {
+        font-family: "Bebas Neue", "Impact", sans-serif;
+        font-size: 152px;
+        font-weight: 900;
+        letter-spacing: 6px;
+        line-height: 1;
+        /* gradient: warm gold → near-white → gold */
+        background: linear-gradient(100deg,
+          #b8780a 0%,
+          #f5d47a 28%,
+          #fffbe8 50%,
+          #f5d47a 72%,
+          #b8780a 100%);
+        background-size: 200% 100%;
+        background-position: 100% 0;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        display: block;
+        will-change: transform, opacity, filter, background-position;
+      }
+
+      /* Glow halo behind name — separate div */
+      .name-halo {
+        position: absolute;
+        left: -40px; top: -30px;
+        width: 620px; height: 200px;
+        background: radial-gradient(ellipse,
+          rgba(240,180,40,0.5) 0%,
+          rgba(200,120,20,0.2) 40%,
+          transparent 70%);
+        opacity: 0;
+        border-radius: 50%;
+        will-change: opacity, transform;
+        z-index: -1;
+      }
+
+      /* ── LAYER 3: subtitle — staggered chars ──────────────────────── */
+
+      .subtitle-wrap {
+        position: absolute;
+        left: 64px; top: 658px;
+        overflow: visible;
+        will-change: opacity;
+        opacity: 0;
+      }
+      .subtitle-word {
+        display: inline-block;
+        font-family: "DM Sans", "Helvetica Neue", sans-serif;
+        font-size: 28px;
+        font-weight: 300;
+        color: rgba(240,225,190,0.82);
+        letter-spacing: 3px;
+        text-transform: uppercase;
+        margin-right: 12px;
+        will-change: transform, opacity;
+      }
+
+      /* ── LAYER 4: particles ────────────────────────────────────────── */
+
+      .particle {
+        position: absolute;
+        border-radius: 50%;
+        background: #f5d080;
+        opacity: 0;
+        will-change: transform, opacity;
+      }
+      .p1  { width:3px;height:3px; left:52px;  top:498px; }
+      .p2  { width:2px;height:2px; left:636px; top:514px; }
+      .p3  { width:4px;height:4px; left:44px;  top:608px; }
+      .p4  { width:2px;height:2px; left:648px; top:592px; }
+      .p5  { width:3px;height:3px; left:330px; top:466px; }
+      .p6  { width:2px;height:2px; left:590px; top:638px; }
+      .p7  { width:4px;height:4px; left:80px;  top:646px; }
+      .p8  { width:2px;height:2px; left:440px; top:478px; }
+      .p9  { width:2px;height:2px; left:200px; top:460px; }
+      .p10 { width:3px;height:3px; left:510px; top:655px; }
+
+      /* Hairline accent lines */
+      .acc-1 {
+        position: absolute;
+        left: 64px; top: 540px;
+        width: 32px; height: 2px;
+        background: rgba(220,150,30,0.8);
+        opacity: 0; transform-origin: left center;
+      }
+      .acc-2 {
+        position: absolute;
+        left: 64px; top: 558px;
+        width: 18px; height: 1px;
+        background: rgba(220,150,30,0.45);
+        opacity: 0; transform-origin: left center;
+      }
+
+      /* Flash-white overlay for camera-hit effect */
+      .flash {
+        position: absolute; inset: 0;
+        background: #fff;
+        opacity: 0;
+        pointer-events: none;
+        z-index: 100;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="10"
+      data-width="720"
+      data-height="1280"
+    >
+      <!-- Atmosphere -->
+      <div class="bg-warm"     data-layout-ignore></div>
+      <div class="bg-cold"     data-layout-ignore></div>
+      <div class="grain"       data-layout-ignore></div>
+      <div class="ghost-letter" data-layout-ignore>R</div>
+      <div class="grid-floor"  data-layout-ignore></div>
+
+      <!-- Structure -->
+      <div id="vert-bar"    class="clip vert-bar"    data-start="1.4" data-duration="8.6" data-track-index="1"></div>
+      <div id="rule-top"    class="clip rule-top"    data-start="1.7" data-duration="8.3" data-track-index="2"></div>
+      <div id="label-above" class="clip label-above" data-start="1.5" data-duration="8.5" data-track-index="3">Absolutely Praised</div>
+
+      <!-- Name -->
+      <div id="name-clip"   class="clip name-wrap"  data-start="1.9" data-duration="8.1" data-track-index="4">
+        <div class="name-halo"  id="name-halo"></div>
+        <div class="name-text"  id="name-text">RISHABH</div>
+      </div>
+
+      <!-- Subtitle -->
+      <div id="rule-bottom" class="clip rule-bottom" data-start="2.6" data-duration="7.4" data-track-index="5"></div>
+      <div id="sub-wrap"    class="clip subtitle-wrap" data-start="2.7" data-duration="7.3" data-track-index="6">
+        <span class="subtitle-word" id="sw0">Absolutely</span>
+        <span class="subtitle-word" id="sw1">fantastic</span>
+        <span class="subtitle-word" id="sw2">person</span>
+      </div>
+
+      <!-- Particles -->
+      <div id="p1"  class="particle p1"  data-layout-ignore></div>
+      <div id="p2"  class="particle p2"  data-layout-ignore></div>
+      <div id="p3"  class="particle p3"  data-layout-ignore></div>
+      <div id="p4"  class="particle p4"  data-layout-ignore></div>
+      <div id="p5"  class="particle p5"  data-layout-ignore></div>
+      <div id="p6"  class="particle p6"  data-layout-ignore></div>
+      <div id="p7"  class="particle p7"  data-layout-ignore></div>
+      <div id="p8"  class="particle p8"  data-layout-ignore></div>
+      <div id="p9"  class="particle p9"  data-layout-ignore></div>
+      <div id="p10" class="particle p10" data-layout-ignore></div>
+
+      <!-- Accent lines -->
+      <div id="acc-1" class="acc-1" data-layout-ignore></div>
+      <div id="acc-2" class="acc-2" data-layout-ignore></div>
+
+      <!-- Flash overlay -->
+      <div id="flash" class="flash" data-layout-ignore></div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // ── ATMOSPHERE: ambient slow motion ──────────────────────────────────
+      // Ghost letter slow drift up
+      tl.to(".ghost-letter", { y: -24, duration: 10, ease: "sine.inOut" }, 0);
+      // Warm radial breathe
+      tl.to(".bg-warm", { scale: 1.15, opacity: 0.85, duration: 5, ease: "sine.inOut",
+        repeat: 1, yoyo: true }, 0);
+      // Cold radial counter-drift (no CSS transform on this element — safe to animate x/y)
+      tl.to(".bg-cold", { xPercent: -50, yPercent: -50, x: -30, y: -20, duration: 7, ease: "sine.inOut" }, 0);
+      // Grid floor slow zoom
+      tl.to(".grid-floor", { scaleY: 1.08, duration: 10, ease: "sine.inOut" }, 0);
+
+      // ── VERTICAL BAR sweeps down ──────────────────────────────────────────
+      tl.to("#vert-bar", { height: 360, duration: 0.55, ease: "power3.out" }, 1.4);
+
+      // ── LABEL slides in from left ─────────────────────────────────────────
+      tl.fromTo("#label-above",
+        { x: -24, opacity: 0 },
+        { x: 0,   opacity: 1, duration: 0.4, ease: "expo.out" },
+        1.55
+      );
+
+      // ── TOP RULE sweeps right ─────────────────────────────────────────────
+      tl.to("#rule-top", { width: 580, duration: 0.5, ease: "power3.out" }, 1.75);
+
+      // ── NAME: flash-in → blur-to-sharp scale pop ─────────────────────────
+      // Pre-flash at t=1.88 — camera hit feel
+      tl.to("#flash", { opacity: 0.55, duration: 0.08, ease: "none" }, 1.88);
+      tl.to("#flash", { opacity: 0,    duration: 0.22, ease: "power2.out" }, 1.96);
+
+      // Name enters with blur, scale, gradient sweep all together
+      tl.fromTo("#name-text",
+        { scale: 0.5, opacity: 0, filter: "blur(22px)", backgroundPosition: "200% 0" },
+        { scale: 1,   opacity: 1, filter: "blur(0px)",  backgroundPosition: "0% 0",
+          duration: 0.55, ease: "back.out(1.9)" },
+        1.9
+      );
+
+      // Halo flare peaks as name lands
+      tl.to("#name-halo", { opacity: 1,    scale: 1.1,  duration: 0.22, ease: "power3.out" }, 2.12);
+      tl.to("#name-halo", { opacity: 0.5,  scale: 1.0,  duration: 0.7,  ease: "sine.inOut" }, 2.34);
+
+      // Capture pulse — micro scale snap
+      tl.to("#name-text", { scale: 1.04, duration: 0.10, ease: "power2.in",  overwrite: "auto" }, 2.5);
+      tl.to("#name-text", { scale: 1.0,  duration: 0.14, ease: "power2.out", overwrite: "auto" }, 2.60);
+
+      // Gradient shimmer sweep left → right after pop settles
+      tl.to("#name-text", { backgroundPosition: "-100% 0", duration: 1.4, ease: "power1.inOut" }, 2.8);
+
+      // ── PARTICLES burst ───────────────────────────────────────────────────
+      const pIds = ["#p1","#p2","#p3","#p4","#p5","#p6","#p7","#p8","#p9","#p10"];
+      tl.fromTo(pIds,
+        { scale: 0, opacity: 0 },
+        { scale: 1, opacity: 1, duration: 0.3,
+          ease: "power3.out", stagger: { each: 0.03, from: "random" } },
+        2.0
+      );
+      // Float groups — different phases for organic feel
+      tl.to(["#p1","#p5","#p9"],  { y: -14, duration: 1.5, ease: "sine.inOut", repeat: Math.floor(8/3)-1, yoyo: true }, 2.4);
+      tl.to(["#p2","#p6","#p10"], { y:  11, duration: 1.8, ease: "sine.inOut", repeat: Math.floor(8/3.6)-1, yoyo: true }, 2.6);
+      tl.to(["#p3","#p4","#p7","#p8"], { x: -8, duration: 2.0, ease: "sine.inOut", repeat: Math.floor(8/4)-1, yoyo: true }, 2.3);
+      // Fade out near end
+      tl.to(pIds, { opacity: 0, duration: 0.5, ease: "power1.in", stagger: 0.04 }, 8.8);
+
+      // ── ACCENT LINES draw in ──────────────────────────────────────────────
+      tl.fromTo("#acc-1",
+        { scaleX: 0, opacity: 0 },
+        { scaleX: 1, opacity: 1, duration: 0.28, ease: "power2.out" },
+        2.18
+      );
+      tl.fromTo("#acc-2",
+        { scaleX: 0, opacity: 0 },
+        { scaleX: 1, opacity: 1, duration: 0.22, ease: "power2.out" },
+        2.3
+      );
+
+      // ── BOTTOM RULE ───────────────────────────────────────────────────────
+      tl.to("#rule-bottom", { width: 480, duration: 0.45, ease: "expo.out" }, 2.65);
+
+      // ── SUBTITLE: words stagger up with opacity ───────────────────────────
+      tl.to("#sub-wrap", { opacity: 1, duration: 0.01 }, 2.7);
+      tl.fromTo([".subtitle-word"],
+        { y: 20, opacity: 0, letterSpacing: "8px" },
+        { y: 0,  opacity: 1, letterSpacing: "3px",
+          duration: 0.5, ease: "power3.out",
+          stagger: { each: 0.14, from: "start" } },
+        2.72
+      );
+
+      // ── HOLD: cinematic slow camera push on name ──────────────────────────
+      tl.to("#name-clip", {
+        scale: 1.04, y: -5,
+        duration: 6.5, ease: "sine.inOut",
+      }, 3.0);
+
+      // Halo gentle pulse
+      const haloRepeats = Math.floor(7 / 2.8) - 1;
+      tl.to("#name-halo", {
+        opacity: 0.75, scale: 1.06,
+        duration: 1.4, ease: "sine.inOut",
+        repeat: haloRepeats, yoyo: true,
+      }, 3.0);
+
+      // Gradient keeps slowly sweeping during hold
+      tl.to("#name-text", {
+        backgroundPosition: "100% 0",
+        duration: 5.5, ease: "sine.inOut",
+      }, 4.5);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

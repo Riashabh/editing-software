@@ -804,8 +804,11 @@ export default function Home() {
       let downloadUrl: string;
       if (contentType.includes("application/json")) {
         const data = await res.json();
-        const blob = await fetch(data.url).then(r => r.blob());
-        downloadUrl = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = data.url;
+        a.download = "clip_exported.mp4";
+        a.click();
+        return;
       } else {
         const blob = await res.blob();
         downloadUrl = URL.createObjectURL(blob);

@@ -34,8 +34,6 @@ if (componentCode) {
   writeFileSync(generatedPath, code, "utf-8");
 }
 
-process.env.FFMPEG_THREADS = "1";
-
 try {
   const bundled = await bundle({
     entryPoint: join(__dirname, "src", "index.tsx"),
@@ -68,6 +66,16 @@ try {
     chromiumOptions: {
       headless: true,
       gl: "swiftshader",
+    },
+    ffmpegOverride: ({ args }) => {
+      // Must inject -x264-params BEFORE the output path (last arg),
+      // otherwise ffmpeg treats them as trailing options and ignores them.
+      const outputFile = args[args.length - 1];
+      return [
+        ...args.slice(0, -1),
+        "-x264-params", "threads=1:lookahead_threads=1",
+        outputFile,
+      ];
     },
   });
 
