@@ -668,6 +668,16 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track:
     }), media_type="application/json")
 
 
+@app.get("/download")
+async def download_proxy(url: str):
+    import urllib.request
+    with urllib.request.urlopen(url) as r:
+        data = r.read()
+    return Response(content=data, media_type="video/mp4", headers={
+        "Content-Disposition": "attachment; filename=clip_exported.mp4"
+    })
+
+
 @app.post("/export")
 async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""):
     ffmpeg_bin, _ = _resolve_ffmpeg_bin()
