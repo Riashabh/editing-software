@@ -80,7 +80,7 @@ def get_demo_video():
 
 
 @app.post("/demo-process")
-async def demo_process(job_id: str = "", mode: str = "single", count: int = 1, aspectRatio: str = "original", subtitles: str = "false"):
+def demo_process(job_id: str = "", mode: str = "single", count: int = 1, aspectRatio: str = "original", subtitles: str = "false"):
     want_subtitles = subtitles.lower() in ("1", "true", "yes")
 
     if not job_id:
@@ -280,7 +280,7 @@ class IntentRequest(BaseModel):
     context: dict = {}
 
 @app.post("/parse-intent")
-async def parse_intent(req: IntentRequest):
+def parse_intent(req: IntentRequest):
     ctx = req.context
     context_prefix = ""
     if ctx.get("hasActiveClip"):
@@ -351,7 +351,7 @@ def root():
 
 
 @app.post("/add-subtitles")
-async def add_subtitles_to_clip(job_id: str = "", srt_key: str = ""):
+def add_subtitles_to_clip(job_id: str = "", srt_key: str = ""):
     if srt_key:
         parts = srt_key.split("_")
         if len(parts) >= 2:
@@ -401,7 +401,7 @@ async def add_subtitles_to_clip(job_id: str = "", srt_key: str = ""):
 
 
 @app.post("/crop")
-async def crop_video(file: UploadFile = File(...), aspectRatio: str = "9/16", job_id: str = ""):
+def crop_video(file: UploadFile = File(...), aspectRatio: str = "9/16", job_id: str = ""):
     input_path = f"temp/{job_id}_input.mp4"
     os.makedirs("temp", exist_ok=True)
     os.makedirs("temp/clips_out", exist_ok=True)
@@ -440,7 +440,7 @@ async def crop_video(file: UploadFile = File(...), aspectRatio: str = "9/16", jo
 
 
 @app.post("/process")
-async def process_video(file: UploadFile = File(...), mode: str = "single", job_id: str = "", count: int = 1, aspectRatio: str = "original", subtitles: bool = False):
+def process_video(file: UploadFile = File(...), mode: str = "single", job_id: str = "", count: int = 1, aspectRatio: str = "original", subtitles: bool = False):
     input_path = f"temp/{job_id}_input.mp4"
     os.makedirs("temp", exist_ok=True)
 
@@ -460,7 +460,7 @@ async def process_video(file: UploadFile = File(...), mode: str = "single", job_
         if mode == "add_subtitles":
             out_path = f"temp/clips_out/{job_id}_v.mp4"
             shutil.copy(input_path, out_path)
-            srt, sub_data = generate_srt(transcript, [{"start": 0, "end": transcript.segments[-1]["end"]}], output_path=f"temp/{job_id}.srt")
+            _, sub_data = generate_srt(transcript, [{"start": 0, "end": transcript.segments[-1]["end"]}], output_path=f"temp/{job_id}.srt")
             sub_json = subtitles_to_json(sub_data)
             with open(f"temp/{job_id}_words.json", "w") as wf:
                 json.dump(sub_json, wf)
@@ -548,7 +548,7 @@ Output ONLY the component code. No markdown. No explanation."""
 
 
 @app.post("/animate")
-async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track: str = "video", position: float = 0, duration: int = 90, fps: int = 30, width: int = 1080, height: int = 1920):
+def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track: str = "video", position: float = 0, duration: int = 90, fps: int = 30, width: int = 1080, height: int = 1920):
     os.makedirs("temp/clips_out", exist_ok=True)
     out_anim = os.path.abspath(f"temp/clips_out/{job_id}_anim.mp4")
     ffmpeg_bin, _ = _resolve_ffmpeg_bin()
@@ -669,7 +669,7 @@ async def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track:
 
 
 @app.get("/download")
-async def download_proxy(url: str):
+def download_proxy(url: str):
     import urllib.request
     with urllib.request.urlopen(url) as r:
         data = r.read()
@@ -679,7 +679,7 @@ async def download_proxy(url: str):
 
 
 @app.post("/export")
-async def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""):
+def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""):
     ffmpeg_bin, _ = _resolve_ffmpeg_bin()
     key = srt_key or job_id
     out_path = os.path.abspath(f"temp/clips_out/{key}_exported.mp4")

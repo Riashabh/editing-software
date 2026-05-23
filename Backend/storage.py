@@ -19,9 +19,9 @@ def _client():
 
 def upload(local_path: str, key: str) -> str:
     bucket = os.environ["R2_BUCKET"]
-    public_base = os.environ["R2_PUBLIC_URL"].rstrip("/")
     _client().upload_file(local_path, bucket, key, ExtraArgs={"ContentType": "video/mp4"})
-    return f"{public_base}/{key}"
+    return _client().generate_presigned_url("get_object", Params={"Bucket": bucket, "Key": key}, ExpiresIn=3600)
+
 
 def enabled() -> bool:
     return bool(os.environ.get("R2_ENDPOINT_URL"))

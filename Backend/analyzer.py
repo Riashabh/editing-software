@@ -58,9 +58,9 @@ def find_best_moments(transcript, count=1):
     for m in moments:
         duration = m["end"] - m["start"]
         if duration > 45:
-            m["end"] = m["start"] + 40  # trim to 40s
+            m["end"] = m["start"] + 45  # trim to 45s
         elif duration < 30:
-            m["end"] = m["start"] + 30  # extend to 30s
+            m["end"] = m["start"] + 35  # extend to 35s
         enforced.append(m)
 
     print(f"Found {len(enforced)} best moments")
