@@ -30,11 +30,18 @@ from Backend.subtitles import (
 from Backend import storage
 
 app = FastAPI()
+ALLOWED_ORIGINS = [
+    "https://wordcut.app",
+    "https://www.wordcut.app",
+    "https://wordcutai.vercel.app/",
+    "http://localhost:3000",   # local dev
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"], no
 )
 
 
@@ -671,11 +678,23 @@ def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track: str =
 @app.get("/download")
 def download_proxy(url: str):
     import urllib.request
+    from urllib.parse import urlparse
+
+    allowed_host = urlparse(os.environ.get("R2_ENDPOINT_URL", "")).hostname
+    target = urlparse(url)
+    host_ok = allowed_host and target.hostname and (
+        target.hostname == allowed_host
+        or target.hostname.endswith("." + allowed_host)
+    )
+    if target.scheme != "https" or not host_ok:
+        raise HTTPException(status_code=403, detail="URL not allowed")
+
     with urllib.request.urlopen(url) as r:
         data = r.read()
     return Response(content=data, media_type="video/mp4", headers={
         "Content-Disposition": "attachment; filename=clip_exported.mp4"
     })
+
 
 
 @app.post("/export")
