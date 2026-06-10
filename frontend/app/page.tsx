@@ -953,7 +953,7 @@ export default function Home() {
                     <span style={{ color: "var(--text-faint)" }}>.</span>
                   </h1>
                   <p style={{ margin: 0, fontSize: 14, color: "var(--text-muted)", lineHeight: 1.6, fontFamily: "var(--font-ui)" }}>
-                    A chat-driven video editor. One message — transcribe, reframe, caption, export.
+                    A chat-driven video editor. One message: transcribe, reframe, caption, export.
                   </p>
                 </div>
 
