@@ -5,11 +5,14 @@ import os
 import re
 import shutil
 import subprocess
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from openai import OpenAI
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.responses import FileResponse, Response, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -29,11 +32,15 @@ from Backend.subtitles import (
 )
 from Backend import storage
 
+
 app = FastAPI()
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 ALLOWED_ORIGINS = [
     "https://wordcut.app",
     "https://www.wordcut.app",
-    "https://wordcutai.vercel.app/",
+    "https://wordcutai.vercel.app",
     "http://localhost:3000",   # local dev
 ]
 
@@ -87,7 +94,8 @@ def get_demo_video():
 
 
 @app.post("/demo-process")
-def demo_process(job_id: str = "", mode: str = "single", count: int = 1, aspectRatio: str = "original", subtitles: str = "false"):
+@limiter.limit("10/hour")
+def demo_process(request: Request, job_id: str = "", mode: str = "single", count: int = 1, aspectRatio: str = "original", subtitles: str = "false"):
     want_subtitles = subtitles.lower() in ("1", "true", "yes")
 
     if not job_id:
@@ -139,7 +147,8 @@ def demo_process(job_id: str = "", mode: str = "single", count: int = 1, aspectR
 
 
 @app.post("/cleanup")
-def cleanup():
+@limiter.limit("20/minute")
+def cleanup(request: Request):
     _clean_temp()
     os.makedirs("temp/clips_out", exist_ok=True)
     return {"status": "cleaned"}
@@ -287,7 +296,8 @@ class IntentRequest(BaseModel):
     context: dict = {}
 
 @app.post("/parse-intent")
-def parse_intent(req: IntentRequest):
+@limiter.limit("20/minute")
+def parse_intent(request: Request, req: IntentRequest):
     ctx = req.context
     context_prefix = ""
     if ctx.get("hasActiveClip"):
@@ -358,7 +368,8 @@ def root():
 
 
 @app.post("/add-subtitles")
-def add_subtitles_to_clip(job_id: str = "", srt_key: str = ""):
+@limiter.limit("20/minute")
+def add_subtitles_to_clip(request: Request, job_id: str = "", srt_key: str = ""):
     if srt_key:
         parts = srt_key.split("_")
         if len(parts) >= 2:
@@ -408,7 +419,8 @@ def add_subtitles_to_clip(job_id: str = "", srt_key: str = ""):
 
 
 @app.post("/crop")
-def crop_video(file: UploadFile = File(...), aspectRatio: str = "9/16", job_id: str = ""):
+@limiter.limit("20/minute")
+def crop_video(request: Request, file: UploadFile = File(...), aspectRatio: str = "9/16", job_id: str = ""):
     input_path = f"temp/{job_id}_input.mp4"
     os.makedirs("temp", exist_ok=True)
     os.makedirs("temp/clips_out", exist_ok=True)
@@ -447,7 +459,8 @@ def crop_video(file: UploadFile = File(...), aspectRatio: str = "9/16", job_id: 
 
 
 @app.post("/process")
-def process_video(file: UploadFile = File(...), mode: str = "single", job_id: str = "", count: int = 1, aspectRatio: str = "original", subtitles: bool = False):
+@limiter.limit("10/hour")
+def process_video(request: Request, file: UploadFile = File(...), mode: str = "single", job_id: str = "", count: int = 1, aspectRatio: str = "original", subtitles: bool = False):
     input_path = f"temp/{job_id}_input.mp4"
     os.makedirs("temp", exist_ok=True)
 
@@ -555,7 +568,8 @@ Output ONLY the component code. No markdown. No explanation."""
 
 
 @app.post("/animate")
-def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track: str = "video", position: float = 0, duration: int = 90, fps: int = 30, width: int = 1080, height: int = 1920):
+@limiter.limit("10/hour")
+def animate_video(request: Request, prompt: str, job_id: str = "", srt_key: str = "", track: str = "video", position: float = 0, duration: int = 90, fps: int = 30, width: int = 1080, height: int = 1920):
     os.makedirs("temp/clips_out", exist_ok=True)
     out_anim = os.path.abspath(f"temp/clips_out/{job_id}_anim.mp4")
     ffmpeg_bin, _ = _resolve_ffmpeg_bin()
@@ -676,7 +690,8 @@ def animate_video(prompt: str, job_id: str = "", srt_key: str = "", track: str =
 
 
 @app.get("/download")
-def download_proxy(url: str):
+@limiter.limit("20/minute")
+def download_proxy(request: Request, url: str):
     import urllib.request
     from urllib.parse import urlparse
 
@@ -698,7 +713,8 @@ def download_proxy(url: str):
 
 
 @app.post("/export")
-def export_video(style: StyleSettings, job_id: str = "", srt_key: str = ""):
+@limiter.limit("10/hour")
+def export_video(request: Request, style: StyleSettings, job_id: str = "", srt_key: str = ""):
     ffmpeg_bin, _ = _resolve_ffmpeg_bin()
     key = srt_key or job_id
     out_path = os.path.abspath(f"temp/clips_out/{key}_exported.mp4")
