@@ -35,10 +35,9 @@ COPY remotion-renderer ./remotion-renderer
 RUN cd remotion-renderer && npm install --legacy-peer-deps --no-audit
 
 # App code
-COPY api.py main.py ./
-COPY Backend ./Backend
+COPY backend ./backend
 
 RUN mkdir -p temp/clips_out
 
 EXPOSE 8000
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
+CMD ["uvicorn", "backend.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips", "*"]
