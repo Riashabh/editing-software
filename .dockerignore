@@ -1,0 +1,44 @@
+# Keep the Docker build context small and the image clean.
+# The backend image only needs: requirements.txt, backend/, remotion-renderer/ (source).
+
+# VCS & tooling
+.git
+.github
+.vscode
+.claude
+.code-review-graph
+
+# Python envs / caches
+.venv
+venv
+backend/venv
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+
+# Node modules (remotion's are reinstalled inside the image; frontend isn't in this image)
+**/node_modules
+remotion-renderer/.remotion
+frontend
+
+# Tests, docs, scripts — not needed at runtime
+tests
+docs
+scripts
+*.md
+
+# Local working data & media
+temp
+demo
+*.mp4
+*.mp3
+*.srt
+*.ass
+
+# Experimental POC — not part of the deployed product
+hyperframes-poc
+
+# Secrets & local config
+.env
+.DS_Store
