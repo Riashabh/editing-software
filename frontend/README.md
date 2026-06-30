@@ -1,36 +1,45 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Wordcut frontend
 
-## Getting Started
+The Next.js 16 / React 19 client for [Wordcut](../README.md) — the chat-driven video editor UI.
+It turns a user's plain-English message into a pipeline of backend calls and previews the result
+(with live canvas subtitles) before export.
 
-First, run the development server:
+## Run
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev      # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+It talks to the backend at `NEXT_PUBLIC_API_URL` (defaults to `http://localhost:8000`). Start the
+backend too — see the [root README](../README.md#quick-start).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Variable | Default | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Backend base URL the browser calls. Set this in Vercel for production. |
 
-## Learn More
+## Layout
 
-To learn more about Next.js, take a look at the following resources:
+```
+app/
+  page.tsx              The whole app today: chat, editor, dual-track timeline, export
+  layout.tsx            Root layout, fonts, Vercel Analytics
+  components/
+    VideoPlayer.tsx     <video> + <canvas> overlay that renders subtitles live
+    StylePanel.tsx      Subtitle style editor; exports Subtitle/SubStyle/DEFAULT_STYLE
+    icons.tsx           Icon set
+  how-it-works/page.tsx Marketing / explainer page
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Notes
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+- **Read `AGENTS.md` before changing build config.** This Next.js version has breaking changes
+  vs. older releases; the authoritative docs are vendored under `node_modules/next/dist/docs/`.
+- `page.tsx` is a ~1440-line monolith. Prefer extracting components out of it over adding more.
+- The canvas subtitle preview is a *separate* implementation from the backend's libass burn, so
+  the preview can differ slightly from the exported MP4.
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+See [docs/ARCHITECTURE.md](../docs/ARCHITECTURE.md) for how the frontend drives the backend
+pipeline.
