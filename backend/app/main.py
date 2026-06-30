@@ -28,6 +28,7 @@ from backend.app.pipeline.subtitles import (
     _srt_timestamp_to_ass,
     _escape_ass_dialogue_text,
     _resolve_ffmpeg_bin,
+    _any_ffmpeg_bin,
     _vf_for_burn,
 )
 from backend.app.pipeline import storage
@@ -714,83 +715,83 @@ def download_proxy(request: Request, url: str):
 @app.post("/export")
 @limiter.limit("10/hour")
 def export_video(request: Request, style: StyleSettings, job_id: str = "", srt_key: str = ""):
-    ffmpeg_bin, _ = _resolve_ffmpeg_bin()
+    # Non-subtitle ops (concat/crop/copy) don't need libass; only the burn does.
+    ffmpeg_bin = _any_ffmpeg_bin()
     key = srt_key or job_id
     out_path = os.path.abspath(f"temp/clips_out/{key}_exported.mp4")
     srt_path = os.path.abspath(f"temp/{key}.srt")
     words_path = os.path.abspath(f"temp/{key}_words.json")
 
-    if style.segments:
-        # NLE export — concat video segments in timeline order, then overlay FX
-        video_segs = sorted([s for s in style.segments if s.track == "video"], key=lambda s: s.timeline_start)
-        fx_segs = [s for s in style.segments if s.track == "fx"]
-
-        if not video_segs:
-            raise HTTPException(status_code=400, detail="No video segments to export.")
-
-        def seg_path(s: ExportSegment) -> str:
-            if s.source_url.startswith("http"):
-                # R2 URL — extract filename and download locally
-                fname = s.source_url.split("/")[-1]
-                local = os.path.abspath(f"temp/clips_out/{fname}")
-                if not os.path.exists(local):
-                    import urllib.request
-                    urllib.request.urlretrieve(s.source_url, local)
-                return local
-            return os.path.abspath("temp/clips_out/" + s.source_url.split("/clips/")[-1])
-
-        if len(video_segs) == 1:
-            video_path = seg_path(video_segs[0])
-        else:
-            concat_txt = os.path.abspath(f"temp/{key}_export_concat.txt")
-            with open(concat_txt, "w") as f:
-                for seg in video_segs:
-                    f.write(f"file '{seg_path(seg)}'\n")
-            merged = os.path.abspath(f"temp/clips_out/{key}_merged.mp4")
-            subprocess.run([ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
-                "-f", "concat", "-safe", "0", "-i", concat_txt,
-                "-c", "copy", merged], check=True)
-            video_path = merged
-
-        # Apply FX overlays (composited on top at their timeline positions)
-        for fx in fx_segs:
-            fx_file = seg_path(fx)
-            if not os.path.exists(fx_file):
-                continue
-            overlay_out = os.path.abspath(f"temp/clips_out/{key}_fx_overlay.mp4")
-            subprocess.run([ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
-                "-i", video_path,
-                "-i", fx_file,
-                "-filter_complex",
-                f"[0:v][1:v]overlay=0:0:enable='between(t,{fx.timeline_start},{fx.timeline_start + fx.duration})'[v]",
-                "-map", "[v]", "-map", "0:a?",
-                "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-c:a", "copy",
-                overlay_out], check=True)
-            video_path = overlay_out
-    else:
-        # Legacy single-file export
-        if srt_key and "_" in srt_key:
-            parts = srt_key.split("_")
-            video_path = os.path.abspath(f"temp/clips_out/{parts[0]}_v{parts[1]}.mp4")
-            srt_path = os.path.abspath(f"temp/{srt_key}.srt")
-            words_path = os.path.abspath(f"temp/{srt_key}_words.json")
-            out_path = os.path.abspath(f"temp/clips_out/{srt_key}_exported.mp4")
-        else:
-            video_path = os.path.abspath(f"temp/clips_out/{key}_v.mp4")
-            if not os.path.exists(video_path):
-                raise HTTPException(status_code=404, detail="Video not found. Re-process the video.")
-
-    if not os.path.exists(video_path):
-        raise HTTPException(status_code=404, detail="Video not found. Re-process the video.")
-
-    if not os.path.exists(video_path):
-        raise HTTPException(status_code=404, detail="Video not found. Re-process the video.")
-
-    has_srt = os.path.exists(srt_path)
-    if not has_srt and not style.subtitles:
-        return FileResponse(video_path, media_type="video/mp4", filename="clip_exported.mp4")
-
     try:
+        if style.segments:
+            # NLE export — concat video segments in timeline order, then overlay FX
+            video_segs = sorted([s for s in style.segments if s.track == "video"], key=lambda s: s.timeline_start)
+            fx_segs = [s for s in style.segments if s.track == "fx"]
+
+            if not video_segs:
+                raise HTTPException(status_code=400, detail="No video segments to export.")
+
+            def seg_path(s: ExportSegment) -> str:
+                if s.source_url.startswith("http"):
+                    # Remote (R2) URL — download locally. Derive the filename from the URL
+                    # PATH only: a presigned URL's query string is hundreds of chars long,
+                    # which would overflow the filesystem name limit and crash the export.
+                    from urllib.parse import urlparse
+                    fname = os.path.basename(urlparse(s.source_url).path) or "segment.mp4"
+                    local = os.path.abspath(f"temp/clips_out/{fname}")
+                    if not os.path.exists(local):
+                        import urllib.request
+                        os.makedirs(os.path.dirname(local), exist_ok=True)
+                        urllib.request.urlretrieve(s.source_url, local)
+                    return local
+                return os.path.abspath("temp/clips_out/" + s.source_url.split("/clips/")[-1])
+
+            if len(video_segs) == 1:
+                video_path = seg_path(video_segs[0])
+            else:
+                concat_txt = os.path.abspath(f"temp/{key}_export_concat.txt")
+                with open(concat_txt, "w") as f:
+                    for seg in video_segs:
+                        f.write(f"file '{seg_path(seg)}'\n")
+                merged = os.path.abspath(f"temp/clips_out/{key}_merged.mp4")
+                subprocess.run([ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                    "-f", "concat", "-safe", "0", "-i", concat_txt,
+                    "-c", "copy", merged], check=True)
+                video_path = merged
+
+            # Apply FX overlays (composited on top at their timeline positions)
+            for fx in fx_segs:
+                fx_file = seg_path(fx)
+                if not os.path.exists(fx_file):
+                    continue
+                overlay_out = os.path.abspath(f"temp/clips_out/{key}_fx_overlay.mp4")
+                subprocess.run([ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                    "-i", video_path,
+                    "-i", fx_file,
+                    "-filter_complex",
+                    f"[0:v][1:v]overlay=0:0:enable='between(t,{fx.timeline_start},{fx.timeline_start + fx.duration})'[v]",
+                    "-map", "[v]", "-map", "0:a?",
+                    "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23", "-c:a", "copy",
+                    overlay_out], check=True)
+                video_path = overlay_out
+        else:
+            # Legacy single-file export
+            if srt_key and "_" in srt_key:
+                parts = srt_key.split("_")
+                video_path = os.path.abspath(f"temp/clips_out/{parts[0]}_v{parts[1]}.mp4")
+                srt_path = os.path.abspath(f"temp/{srt_key}.srt")
+                words_path = os.path.abspath(f"temp/{srt_key}_words.json")
+                out_path = os.path.abspath(f"temp/clips_out/{srt_key}_exported.mp4")
+            else:
+                video_path = os.path.abspath(f"temp/clips_out/{key}_v.mp4")
+
+        if not os.path.exists(video_path):
+            raise HTTPException(status_code=404, detail="Video not found. Re-process the video.")
+
+        has_srt = os.path.exists(srt_path)
+        if not has_srt and not style.subtitles:
+            return FileResponse(video_path, media_type="video/mp4", filename="clip_exported.mp4")
+
         crop_map = {
             "9/16": None,
             "16/9": "crop=iw:iw*9/16",
@@ -819,8 +820,11 @@ def export_video(request: Request, style: StyleSettings, job_id: str = "", srt_k
             )
             source = cropped
         burn_with_style(source, srt_path, out_path, style, words_path=words_path)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Surface the real failure instead of an opaque 500 buried in a traceback.
+        raise HTTPException(status_code=500, detail=f"Export failed: {e}")
 
     key = (srt_key.split("_")[0] if (srt_key and "_" in srt_key) else (srt_key or job_id))
     for pattern in [f"temp/{key}*", f"temp/clips_out/{key}*"]:
