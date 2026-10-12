@@ -2,7 +2,7 @@
 
 **AI video editor you control through chat.**
 
-Upload a long video, tell Wordcut what you want — it finds the best moments, cuts clips, adds subtitles, generates animations, and exports — all from a single chat message.
+Upload a long video, tell Wordcut what you want it finds the best moments, cuts clips, adds subtitles, generates animations, and exports all from a single chat message.
 
 > **Docs:** [Architecture](docs/ARCHITECTURE.md) · [Environment variables](docs/ENVIRONMENT.md) · [Deployment](docs/DEPLOYMENT.md) · [Troubleshooting](docs/TROUBLESHOOTING.md) · [Security](docs/SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
